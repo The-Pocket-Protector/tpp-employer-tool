@@ -1,0 +1,115 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#f0fdf4', 'primaryBorderColor': '#16a34a', 'primaryTextColor': '#1e293b', 'lineColor': '#475569', 'secondaryColor': '#eff6ff', 'tertiaryColor': '#fefce8'}}}%%
+
+flowchart TD
+    START([User Opens Tool]) --> S0
+
+    %% ═══ STEP 0: THE FIRST FORK ═══
+    S0{"STEP 0: Company Size\n(First Fork)\n\nHow many employees\nat your employer?"}
+    S0 -->|"≤20 employees"| A_BRANCH["BRANCH A\n≤20 Employees\nMedicare is Primary"]
+    S0 -->|"20+ employees"| B_BRANCH["BRANCH B\n20+ Employees\nEmployer is Primary"]
+    S0 -->|"Not sure"| B_BRANCH
+
+    %% ═══ BRANCH A: SMALL EMPLOYER → MEDICARE ═══
+    A_BRANCH --> S100["STEP 100: Education Screen\n\nFederal law makes Medicare primary.\nEmployer plan pays second.\nMust enroll in Part B or face penalty."]
+    S100 --> S101{"STEP 101: Dependents\n\nWho else is on your\nemployer plan?"}
+    S101 -->|"Just me"| S102
+    S101 -->|"Spouse"| S102
+    S101 -->|"Children"| S102
+    S101 -->|"Spouse + Children"| S102
+
+    S102["STEP 102: ZIP Code\n\nCollect user's ZIP code\n(required for plan lookup)"] --> S103
+
+    S103["STEP 103: Doctors\n\nAdd current doctors\n(name/specialty)\nCan skip"] --> S104
+
+    S104["STEP 104: Prescriptions\n\nAdd current medications\n(name, dosage, frequency)\nCan skip"] --> S105
+
+    S105{"STEP 105: Coverage Preference\n\nWhat matters most?"}
+    S105 -->|"Cheaper coverage"| REC_CHEAPER_A["preference = cheaper"]
+    S105 -->|"Similar coverage"| REC_SIMILAR_A["preference = similar"]
+    S105 -->|"Better coverage"| REC_BETTER_A["preference = better"]
+
+    REC_CHEAPER_A --> MEDREC_A["STEP 106: Medicare Recommendation\n(generateMedicareRec)"]
+    REC_SIMILAR_A --> MEDREC_A
+    REC_BETTER_A --> MEDREC_A
+
+    %% ═══ BRANCH B: LARGE EMPLOYER ═══
+    B_BRANCH --> S1{"STEP 1: Employment Status"}
+    S1 -->|"Active employee"| EMP_ANALYSIS
+    S1 -->|"COBRA"| COBRA_BRANCH["BRANCH C\nCOBRA Sub-Branch"]
+    S1 -->|"Retiree coverage"| EMP_ANALYSIS
+    S1 -->|"Spouse's plan"| EMP_ANALYSIS
+    S1 -->|"Planning retirement"| EMP_ANALYSIS
+
+    %% ═══ BRANCH B: EMPLOYER ANALYSIS FLOW ═══
+    EMP_ANALYSIS["Employer Plan Analysis Path"] --> S2
+    S2["STEP 2: Monthly Premium\n\nWhat comes out of\nyour paycheck?"] --> S3
+    S3["STEP 3: Annual Deductible"] --> S4
+    S4["STEP 4: OOP Maximum"] --> S5
+
+    S5{"STEP 5: Dependents\n\nWho else is on\nyour plan?"} --> S6
+
+    S6{"STEP 6: Network Satisfaction\n\nHow do you feel about\nyour current coverage?"}
+    S6 -->|"Happy"| EMP_CALC
+    S6 -->|"Limited"| EMP_CALC
+    S6 -->|"Not sure"| EMP_CALC
+
+    EMP_CALC["generateEmployerAnalysis()\n\nScore Medicare vs Employer\nfactors, calculate ratio"] --> S7
+
+    S7{"STEP 7: Analysis Results\n\nShow verdict + factors"}
+    S7 -->|"Ratio > 0.6\nMedicare favored\nshowContinue = true"| MEDICARE_CONT["Continue to\nMedicare Plan Finder"]
+    S7 -->|"Ratio < 0.4\nEmployer favored\nshowContinue = false"| EMPLOYER_WIN["Show CTA:\nGet Free Comparison"]
+    S7 -->|"0.4 ≤ Ratio ≤ 0.6\nClose call\nshowContinue = true"| MEDICARE_CONT
+
+    %% ═══ BRANCH B → MEDICARE CONTINUATION ═══
+    MEDICARE_CONT --> S200["STEP 200: ZIP Code"] --> S201
+    S201["STEP 201: Doctors\n(Can skip)"] --> S202
+    S202["STEP 202: Prescriptions\n(Can skip)"] --> S203
+
+    S203{"STEP 203: Coverage Preference\n\nWhat matters most?"}
+    S203 -->|"Cheaper"| REC_CHEAPER_B["preference = cheaper"]
+    S203 -->|"Similar"| REC_SIMILAR_B["preference = similar"]
+    S203 -->|"Better"| REC_BETTER_B["preference = better"]
+
+    REC_CHEAPER_B --> MEDREC_B["STEP 204: Medicare Recommendation\n(generateMedicareRec)"]
+    REC_SIMILAR_B --> MEDREC_B
+    REC_BETTER_B --> MEDREC_B
+
+    %% ═══ BRANCH C: COBRA ═══
+    COBRA_BRANCH --> S10
+    S10{"STEP 10: COBRA Plan Type\n\n⚠️ Warning: COBRA is NOT\nemployer coverage for Medicare"}
+    S10 -->|"PPO / HMO / HDHP / EPO / Unsure"| S11
+
+    S11["STEP 11: COBRA Costs\n\nMonthly premium\nAnnual deductible\nPrimary care copay"] --> S12
+
+    S12["STEP 12: About You\n\nAge, ZIP code,\nHousehold income"] --> S13
+
+    S13["STEP 13: Preference Sliders\n\nPre-filled from plan type.\n6 sliders with trade-off logic:\nPremium, Network, Copay,\nDeductible, Rx, OOP Max\n\nOption: 'Find most similar plan'"] --> S14
+
+    S14["STEP 14: COBRA vs Marketplace\n\nSide-by-side comparison\nwith savings calculation"]
+
+    %% ═══ RECOMMENDATION ENGINE ═══
+    MEDREC_A --> REC_ENGINE{"Medicare Recommendation\nEngine Logic"}
+    MEDREC_B --> REC_ENGINE
+
+    REC_ENGINE -->|"Default = medigap"| DECIDE
+
+    DECIDE{"Decision Factors"}
+    DECIDE -->|"preference = cheaper\nAND doctors < 3\nAND no complex Rx"| RESULT_MA["✅ Recommend:\nMedicare Advantage"]
+    DECIDE -->|"preference = cheaper\nBUT 3+ doctors\nOR complex Rx"| RESULT_MA_WARN["✅ Recommend:\nMedicare Advantage\n⚠️ With coverage warning"]
+    DECIDE -->|"preference = similar"| RESULT_MG["✅ Recommend:\nMedigap + Part D"]
+    DECIDE -->|"preference = better"| RESULT_MG
+
+    RESULT_MA --> CTA_FINAL["CTA: Talk to Licensed\nMedicare Advisor →"]
+    RESULT_MA_WARN --> CTA_FINAL
+    RESULT_MG --> CTA_FINAL
+
+    %% Styling
+    style START fill:#16a34a,color:#fff,stroke:#15803d
+    style A_BRANCH fill:#eff6ff,stroke:#3b82f6,color:#1d4ed8
+    style B_BRANCH fill:#fefce8,stroke:#eab308,color:#92400e
+    style COBRA_BRANCH fill:#fef2f2,stroke:#dc2626,color:#991b1b
+    style RESULT_MA fill:#eff6ff,stroke:#3b82f6,color:#1d4ed8
+    style RESULT_MA_WARN fill:#fef2f2,stroke:#dc2626,color:#991b1b
+    style RESULT_MG fill:#f0fdf4,stroke:#16a34a,color:#15803d
+    style CTA_FINAL fill:#16a34a,color:#fff,stroke:#15803d
+    style EMPLOYER_WIN fill:#fefce8,stroke:#eab308,color:#92400e
