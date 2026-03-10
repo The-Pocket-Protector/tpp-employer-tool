@@ -1987,11 +1987,11 @@ export default function EmployerCoverageTools() {
               <div style={{width:10,height:10,borderRadius:"50%",background:GREEN}}/>
               <div style={{fontSize:13,fontWeight:700,color:GREEN,fontFamily:heading,textTransform:"uppercase",letterSpacing:"0.06em"}}>Licensed Medicare advisors available now</div>
             </div>
-            <a href="tel:+18885551234" style={{fontFamily:heading,fontSize:32,fontWeight:800,color:TEXT_DARK,textDecoration:"none",display:"block",marginBottom:12}}>(888) 555-1234</a>
+            <a href="tel:+18667643312" style={{fontFamily:heading,fontSize:32,fontWeight:800,color:TEXT_DARK,textDecoration:"none",display:"block",marginBottom:12}}>1-866-764-3312</a>
             <div style={{fontSize:13,color:TEXT_MED,marginBottom:8}}>Mon–Fri 8am–8pm · Sat 9am–5pm ET</div>
             <div style={{fontSize:12,color:TEXT_LIGHT}}>Average call time: 15–20 minutes. No sales pressure.</div>
           </div>
-          <a href="tel:+18885551234" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:17,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",cursor:"pointer"}}>Tap to Call Now</a>
+          <a href="tel:+18667643312" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:17,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",cursor:"pointer"}}>Tap to Call Now</a>
           {btnB(301)}
         </div>)}
 
