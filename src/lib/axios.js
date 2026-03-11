@@ -122,6 +122,27 @@ export const sunfireApi = createApiInstance(API_ENDPOINTS.BASE);
 export const mbiApi = createApiInstance(API_ENDPOINTS.MBI);
 export const railwayApi = createApiInstance(API_ENDPOINTS.RAILWAY);
 
+// Stedi MCP API configuration
+const STEDI_MCP_URL = import.meta.env.VITE_STEDI_MCP_URL || 'https://mcp.us.stedi.com/2025-07-11/mcp';
+
+export const stediApi = axios.create({
+  baseURL: STEDI_MCP_URL,
+  timeout: AXIOS_TIMEOUT,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream'
+  }
+});
+
+// Add interceptor for Stedi Key-based auth
+stediApi.interceptors.request.use((config) => {
+  const key = import.meta.env.VITE_STEDI_API_KEY;
+  if (key) {
+    config.headers.Authorization = `Key ${key}`;
+  }
+  return config;
+});
+
 /**
  * Helper function to handle API errors
  * @param {unknown} error - The error to handle

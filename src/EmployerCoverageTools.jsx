@@ -5,6 +5,7 @@ import DoctorSearchStep from "./components/DoctorSearchStep";
 import DrugSearchStep from "./components/DrugSearchStep";
 import CardCaptureStep from "./components/CardCaptureStep";
 import InsuranceCardCapture from "./components/InsuranceCardCapture";
+import EligibilityCheckStep from "./components/EligibilityCheckStep";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
 const TEXT_DARK = "#1e293b", TEXT_MED = "#475569", TEXT_LIGHT = "#94a3b8", BORDER = "#e2e8f0";
@@ -130,7 +131,7 @@ const EMPLOYER_PLANS_DB = [
   {id:"ep_15",planName:"Aetna Open Choice PPO",carrier:"Aetna",employer:"Umbrella Corporation",premium:295,deductible:2500,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true},
 ];
 
-const DUMMY_MATCHED_PLAN = {carrier:"Blue Cross Blue Shield",planName:"Blue Choice PPO",groupNumber:"GRP-98412",employerName:"Detected Employer Inc.",premium:285,deductible:2000,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true,matched:true};
+const DUMMY_MATCHED_PLAN = {carrierName:"BlueCross BlueShield",memberId:"XOX813969028",subscriberName:"PATRICK KAHN",matched:true};
 
 // ─── STUB FUNCTIONS (TO BE MIGRATED TO SERVICES) ───
 // TODO: Migrate to real service - see src/services/ for patterns
@@ -959,6 +960,9 @@ export default function EmployerCoverageTools() {
   const [mgNeeds, setMgNeeds] = useState({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""});
   const [planResult, setPlanResult] = useState(null);
   const [matchmakerEntryStep, setMatchmakerEntryStep] = useState(null);
+  // Eligibility check state
+  const [insuranceCardData, setInsuranceCardData] = useState(null);
+  const [eligibilityResult, setEligibilityResult] = useState(null);
   const [guidePrefs, setGuidePrefs] = useState(new Set());
   const [guideMatch, setGuideMatch] = useState(null);
   const [recSource, setRecSource] = useState(0); // which step the rec came from
@@ -1340,6 +1344,12 @@ export default function EmployerCoverageTools() {
               </div>
             </div>
           </div>
+
+          {/* Eligibility Check Entry Point */}
+          <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${BORDER}`}}>
+            <button onClick={()=>goTo(340)} style={{width:"100%",background:"none",border:`2px solid ${GREEN}`,color:GREEN,padding:"14px 28px",borderRadius:12,fontSize:15,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>Check Insurance Eligibility</button>
+            <div style={{fontSize:12,color:TEXT_MED,textAlign:"center",marginTop:8}}>Scan your insurance card to verify coverage</div>
+          </div>
         </div>)}
 
         {/* ═══════════════════════════════════════════════════════ */}
@@ -1513,11 +1523,11 @@ export default function EmployerCoverageTools() {
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
               <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Plan identified</div>
-                <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.planName}</div>
-                <div style={{fontSize:13,color:TEXT_MED}}>{planIdResult.carrier}{planIdResult.employer ? ` · ${planIdResult.employer}` : ""}{planIdResult.employerName ? ` · ${planIdResult.employerName}` : ""}</div>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Card scanned</div>
+                <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.carrierName || planIdResult.planName}</div>
+                <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Subscriber: {planIdResult.subscriberName}</div><div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Member ID: {planIdResult.memberId}</div>
               </div>
-              <button onClick={()=>{const mp=planIdResult;setMatchedPlan(mp);setMedRec(prev=>prev?enhanceWithPlanMatch(mp,prev):prev);goTo(106)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
+              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
               <button onClick={()=>setPlanIdResult(null)} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>That's not my plan — try again</button>
             </div>
           )}
@@ -2065,11 +2075,11 @@ export default function EmployerCoverageTools() {
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
               <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Plan identified</div>
-                <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.planName}</div>
-                <div style={{fontSize:13,color:TEXT_MED}}>{planIdResult.carrier}{planIdResult.employer ? ` · ${planIdResult.employer}` : ""}{planIdResult.employerName ? ` · ${planIdResult.employerName}` : ""}</div>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Card scanned</div>
+                <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.carrierName || planIdResult.planName}</div>
+                <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Subscriber: {planIdResult.subscriberName}</div><div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Member ID: {planIdResult.memberId}</div>
               </div>
-              <button onClick={()=>{const mp=planIdResult;setMatchedPlan(mp);setMedRec(prev=>prev?enhanceWithPlanMatch(mp,prev):prev);goTo(204)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
+              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
               <button onClick={()=>setPlanIdResult(null)} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>That's not my plan — try again</button>
             </div>
           )}
@@ -2123,7 +2133,7 @@ export default function EmployerCoverageTools() {
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
               <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Plan identified</div>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Card scanned</div>
                 <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{cobraPlanId.planName}</div>
                 <div style={{fontSize:13,color:TEXT_MED,marginBottom:8}}>{cobraPlanId.carrier}{cobraPlanId.employer ? ` · ${cobraPlanId.employer}` : ""}</div>
                 <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.7}}>
@@ -2799,6 +2809,20 @@ export default function EmployerCoverageTools() {
           </div>
         );})()}
 
+
+        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-346) ═══ */}
+        {step>=340&&step<=346&&(
+          <EligibilityCheckStep
+            currentStep={step}
+            goToStep={goTo}
+            cardData={insuranceCardData}
+            setCardData={setInsuranceCardData}
+            eligibilityResult={eligibilityResult}
+            setEligibilityResult={setEligibilityResult}
+            onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(106)}}
+            onReset={()=>goTo(0)}
+          />
+        )}
 
       </div>
       <style>{`
