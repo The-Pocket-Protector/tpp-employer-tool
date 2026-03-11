@@ -1,14 +1,17 @@
 /**
  * EligibilityCheckStep - Multi-step insurance eligibility check flow
  * Uses Stedi MCP for payer search and eligibility verification
+ * Steps 340-348: Instructions -> Camera -> Extracting -> DOB -> Checking -> Success -> Loading Recs -> Plan Comparison
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { extractInsuranceCard, formatCardDataForDisplay } from '../services/insurance-card.service';
 import { performEligibilityCheck } from '../services/stedi.service';
+import { getRecommendationsV6 } from '../services/sunfire.service';
 import { FrameAnalyzer } from '../lib/card-detection/frame-analyzer';
 import { useCameraCapture } from '../hooks/useCameraCapture';
 import DateOfBirthInput from './DateOfBirthInput';
+import PlanComparisonScreen from './PlanComparisonScreen';
 import {
   GREEN,
   GREEN_LIGHT,
@@ -23,14 +26,32 @@ import {
   body
 } from '../constants/styles';
 
+// Rotating messages for step 347 loading screen
+const LOADING_MESSAGES = [
+  "Reviewing doctor networks...",
+  "Comparing out-of-pocket maximums...",
+  "Checking dental allowances...",
+  "Analyzing prescription coverage...",
+  "Evaluating vision benefits...",
+  "Comparing hospital costs...",
+  "Checking specialist copays...",
+  "Finding the best value for you..."
+];
+
 /**
  * @param {Object} props
- * @param {number} props.currentStep - Current step number (340-346)
+ * @param {number} props.currentStep - Current step number (340-348)
  * @param {function} props.goToStep - Function to navigate to a step
  * @param {Object} props.cardData - Extracted insurance card data (or null)
  * @param {function} props.setCardData - Function to update card data
  * @param {Object} props.eligibilityResult - Eligibility check result (or null)
  * @param {function} props.setEligibilityResult - Function to update eligibility result
+ * @param {Object} props.recommendationData - V6 recommendation data (or null)
+ * @param {function} props.setRecommendationData - Function to update recommendation data
+ * @param {string} props.zipCode - User's ZIP code for API calls
+ * @param {string} props.county - County code for API calls
+ * @param {string} props.countyName - County display name
+ * @param {string} props.customerCode - Sunfire customer code
  * @param {function} props.onComplete - Callback when flow is complete
  * @param {function} props.onReset - Function to reset the entire flow
  */
@@ -41,12 +62,62 @@ export default function EligibilityCheckStep({
   setCardData,
   eligibilityResult,
   setEligibilityResult,
+  recommendationData,
+  setRecommendationData,
+  // zipCode and county are passed but reserved for future API enhancements
+  countyName,
+  customerCode,
   onComplete,
   onReset
 }) {
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
-  const [dateOfBirth, setDateOfBirth] = useState(null);
+  const [, setDateOfBirth] = useState(null); // DOB stored for eligibility flow
   const [error, setError] = useState(null);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+
+  // Rotate loading messages for step 347
+  useEffect(() => {
+    if (currentStep !== 347) return;
+
+    const interval = setInterval(() => {
+      setLoadingMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [currentStep]);
+
+  // Fetch V6 recommendations when entering step 347
+  useEffect(() => {
+    if (currentStep !== 347) return;
+
+    const fetchRecommendations = async () => {
+      try {
+        const year = new Date().getFullYear().toString();
+        const payload = {
+          medicaid_payload: {},
+          allow_dsnp: true,
+          allow_csnp: false
+        };
+
+        const result = await getRecommendationsV6(customerCode, year, payload);
+
+        if (result && (result.planOverview || result.benefits)) {
+          setRecommendationData?.(result);
+          goToStep(348);
+        } else {
+          // No recommendation found, continue to default flow
+          console.warn('No V6 recommendation found, continuing to step 106');
+          onComplete?.(eligibilityResult);
+        }
+      } catch (err) {
+        console.error('Failed to fetch V6 recommendations:', err);
+        // On error, continue to default flow
+        onComplete?.(eligibilityResult);
+      }
+    };
+
+    fetchRecommendations();
+  }, [currentStep, customerCode, eligibilityResult, goToStep, onComplete, setRecommendationData]);
 
   // Handle capture and extraction
   const handleCaptureComplete = useCallback(async (file, previewUrl) => {
@@ -697,9 +768,9 @@ export default function EligibilityCheckStep({
           </div>
         </div>
 
-        {/* Continue button */}
+        {/* Continue button - goes to V6 recommendations */}
         <button
-          onClick={() => onComplete?.(eligibilityResult)}
+          onClick={() => goToStep(347)}
           style={{
             width: '100%',
             padding: '16px 28px',
@@ -715,7 +786,120 @@ export default function EligibilityCheckStep({
         >
           Continue
         </button>
+
+        {/* Skip recommendations option */}
+        <button
+          onClick={() => onComplete?.(eligibilityResult)}
+          style={{
+            width: '100%',
+            marginTop: 12,
+            background: 'none',
+            border: 'none',
+            color: TEXT_MED,
+            padding: '10px',
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: heading,
+            cursor: 'pointer'
+          }}
+        >
+          Skip plan comparison
+        </button>
       </div>
+    );
+  }
+
+  // Step 347: Fetching V6 Recommendations (Loading)
+  if (currentStep === 347) {
+    return (
+      <div style={{ animation: 'fadeUp 0.35s ease', textAlign: 'center', padding: '40px 0' }}>
+        <div style={{
+          fontSize: 13,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: TEXT_LIGHT,
+          marginBottom: 8,
+          fontFamily: heading
+        }}>
+          Analyzing Plans
+        </div>
+
+        <div style={{
+          fontFamily: heading,
+          fontSize: 24,
+          fontWeight: 800,
+          color: TEXT_DARK,
+          marginBottom: 16,
+          lineHeight: 1.3
+        }}>
+          Let me check every plan in {countyName || 'your county'}...
+        </div>
+
+        <div style={{
+          width: 56,
+          height: 56,
+          border: `4px solid ${BORDER}`,
+          borderTopColor: GREEN,
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          margin: '0 auto 28px'
+        }}>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+
+        <div style={{
+          fontSize: 15,
+          color: TEXT_MED,
+          fontFamily: body,
+          lineHeight: 1.6,
+          minHeight: 24,
+          transition: 'opacity 0.3s ease'
+        }}>
+          {LOADING_MESSAGES[loadingMessageIndex]}
+        </div>
+
+        <div style={{
+          marginTop: 32,
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 6
+        }}>
+          {LOADING_MESSAGES.map((_, index) => (
+            <div
+              key={index}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: index === loadingMessageIndex ? GREEN : BORDER,
+                transition: 'background 0.3s ease'
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Step 348: Plan Comparison Results
+  if (currentStep === 348 && recommendationData) {
+    return (
+      <PlanComparisonScreen
+        recommendationData={recommendationData}
+        currentPlanData={cardData}
+        countyName={countyName}
+        onAction={(action, planOverview) => {
+          // Pass recommendation data along with eligibility result
+          onComplete?.({
+            ...eligibilityResult,
+            recommendation: recommendationData,
+            selectedAction: action,
+            selectedPlan: planOverview
+          });
+        }}
+        onBack={() => goToStep(345)}
+      />
     );
   }
 
