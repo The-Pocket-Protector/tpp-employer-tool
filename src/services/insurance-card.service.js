@@ -25,16 +25,19 @@ export async function extractInsuranceCard(file) {
     const form = new FormData();
     form.append('file', file, 'insurance-card.jpg');
 
-    const response = await railwayApi.post('/insurance-card/extract', form, {
+    const response = await railwayApi.post('/medicard/extract', form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
 
-    // Normalize response data
+    // Normalize response data - handle both Medicare and generic insurance card formats
     const data = response.data;
     return {
-      carrierName: data.carrierName || data.carrier || data.insuranceCompany || data.payerName,
-      memberId: data.memberId || data.memberNumber || data.subscriberId || data.id,
-      subscriberName: data.subscriberName || data.memberName || data.name || data.fullName,
+      // Carrier: Medicare cards don't have carrier, generic cards do
+      carrierName: data.carrierName || data.carrier || data.insuranceCompany || data.payerName || (data.medicareNumber ? 'Medicare' : null),
+      // Member ID: could be medicareNumber, memberId, identificationNumber, or other variations
+      memberId: data.memberId || data.identificationNumber || data.medicareNumber || data.memberNumber || data.subscriberId || data.id || data.planId,
+      // Subscriber name: fullName or constructed from firstName/lastName
+      subscriberName: data.subscriberName || data.memberName || data.fullName || (data.firstName && data.lastName ? `${data.firstName} ${data.lastName}` : null),
       groupNumber: data.groupNumber || data.group || data.groupId,
       planType: data.planType || data.type,
       rxBin: data.rxBin || data.bin,
