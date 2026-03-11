@@ -1,4 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { lookupZip, saveSession, patchSession, searchProviders, searchDrugs as searchDrugsApi, getDrugDosages } from "./services/sunfire.service";
+import { getRadiusZipcodes } from "./services/zip.service";
+import DoctorSearchStep from "./components/DoctorSearchStep";
+import DrugSearchStep from "./components/DrugSearchStep";
+import CardCaptureStep from "./components/CardCaptureStep";
+import InsuranceCardCapture from "./components/InsuranceCardCapture";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
 const TEXT_DARK = "#1e293b", TEXT_MED = "#475569", TEXT_LIGHT = "#94a3b8", BORDER = "#e2e8f0";
@@ -126,12 +132,19 @@ const EMPLOYER_PLANS_DB = [
 
 const DUMMY_MATCHED_PLAN = {carrier:"Blue Cross Blue Shield",planName:"Blue Choice PPO",groupNumber:"GRP-98412",employerName:"Detected Employer Inc.",premium:285,deductible:2000,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true,matched:true};
 
+// ─── STUB FUNCTIONS (TO BE MIGRATED TO SERVICES) ───
+// TODO: Migrate to real service - see src/services/ for patterns
+// Import: import { extractInsuranceCard } from './services/insurance.service';
 async function extractPlanFromCard(imageFile) {
-  // Future: return fetch('/api/steadi/extract', ...).then(r => r.json());
+  // STUB: Replace with real API call to extract plan from card image
+  // Real implementation should POST to /api/insurance/extract with FormData
   return new Promise(r => setTimeout(() => r(DUMMY_MATCHED_PLAN), 1500));
 }
 
+// TODO: Migrate to real service - see src/services/sunfire.service.js for patterns
 async function searchEmployerPlans(query) {
+  // STUB: Replace with real API call to search employer plans
+  // Real implementation should call sunfireApi or dedicated employer plans API
   const q = query.toLowerCase();
   return EMPLOYER_PLANS_DB.filter(p =>
     p.planName.toLowerCase().includes(q) ||
@@ -601,24 +614,87 @@ function matchMAPlan(needs, doctors, prescriptions) {
 
 
 
-// ─── SEARCH FUNCTIONS (swap for API later) ───
+// ─── SEARCH FUNCTIONS (uses real API with fallback to mock data) ───
+async function searchDoctorsWithZip(query, zipCode) {
+  if (query.length < 2) return [];
+  try {
+    const results = await searchProviders({
+      provider_name: query,
+      zip_code: zipCode || '',
+      max_size: 10
+    });
+    return (results || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      npi: p.npi || p.id,
+      specialty: Array.isArray(p.specialties) ? p.specialties.join(', ') : (p.specialties || p.specialty || ''),
+      city: p.city || '',
+      state: p.state || '',
+      address: [p.address1, p.city, p.state, p.zip].filter(Boolean).join(', ')
+    }));
+  } catch (error) {
+    console.error('Doctor search error:', error);
+    // Fallback to mock data if API fails
+    const q = query.toLowerCase();
+    return DOCTORS_DB.filter(d =>
+      d.name.toLowerCase().includes(q) ||
+      d.specialty.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }
+}
+
+// Wrapper for backward compatibility (uses closure to access zipCode from component)
+let currentZipCode = '';
+function setSearchZipCode(zip) { currentZipCode = zip; }
 async function searchDoctors(query) {
-  const q = query.toLowerCase();
-  return DOCTORS_DB.filter(d =>
-    d.name.toLowerCase().includes(q) ||
-    d.specialty.toLowerCase().includes(q) ||
-    d.city.toLowerCase().includes(q) ||
-    d.state.toLowerCase().includes(q)
-  ).slice(0, 8);
+  return searchDoctorsWithZip(query, currentZipCode);
 }
 
 async function searchDrugs(query) {
-  const q = query.toLowerCase();
-  return DRUGS_DB.filter(d =>
-    d.brandName.toLowerCase().includes(q) ||
-    d.genericName.toLowerCase().includes(q) ||
-    d.therapeuticClass.toLowerCase().includes(q)
-  ).slice(0, 8);
+  if (query.length < 2) return [];
+  try {
+    const results = await searchDrugsApi(query, true);
+    if (results?.drugs && results.drugs.length > 0) {
+      // Get dosage info for first few drugs (avoid too many API calls)
+      const drugsWithDosages = await Promise.all(
+        results.drugs.slice(0, 8).map(async (drug) => {
+          try {
+            const dosageResult = await getDrugDosages(parseInt(drug.id));
+            const dosages = dosageResult?.drugDosage?.dosages || [];
+            return {
+              id: drug.id,
+              brandName: drug.name,
+              genericName: drug.genericName || '',
+              therapeuticClass: drug.therapeuticClass || '',
+              defaultDosage: dosages[0]?.strength || '',
+              frequency: 'Once daily',
+              dosages: dosages.map(d => ({ id: d.id, strength: d.strength, qty: d.qty, packages: d.packages }))
+            };
+          } catch {
+            return {
+              id: drug.id,
+              brandName: drug.name,
+              genericName: drug.genericName || '',
+              therapeuticClass: '',
+              defaultDosage: '',
+              frequency: 'Once daily',
+              dosages: []
+            };
+          }
+        })
+      );
+      return drugsWithDosages;
+    }
+    return [];
+  } catch (error) {
+    console.error('Drug search error:', error);
+    // Fallback to mock data if API fails
+    const q = query.toLowerCase();
+    return DRUGS_DB.filter(d =>
+      d.brandName.toLowerCase().includes(q) ||
+      d.genericName.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }
 }
 
 // ─── TYPEAHEAD COMPONENT ───
@@ -868,6 +944,7 @@ export default function EmployerCoverageTools() {
   const [cobra, setCobra] = useState({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:"",matchedPlan:null});
   const [cobraPlanId, setCobraPlanId] = useState(null);
   const [planIdMode, setPlanIdMode] = useState(null); // 'search' to show inline typeahead
+  const [showInsuranceCamera, setShowInsuranceCamera] = useState(null); // step number when camera is active
   const [sliders, setSliders] = useState({premium:50,network:50,copay:50,deductible:50,rx:50,oop:50});
   const [baseSliders, setBaseSliders] = useState({premium:50,network:50,copay:50,deductible:50,rx:50,oop:50});
   const [matchSimilar, setMatchSimilar] = useState(false);
@@ -886,14 +963,23 @@ export default function EmployerCoverageTools() {
   const [guideMatch, setGuideMatch] = useState(null);
   const [recSource, setRecSource] = useState(0); // which step the rec came from
 
-  const set = (k,v) => setAnswers(p=>({...p,[k]:v}));
+  // Sunfire backend integration state
+  const [county, setCounty] = useState('');
+  const [countyName, setCountyName] = useState('');
+  const [radiusZipcodes, setRadiusZipcodes] = useState('');
+  const [availableCounties, setAvailableCounties] = useState([]);
+  const [sunfireSession, setSunfireSession] = useState(null);
+  const [isLoadingZip, setIsLoadingZip] = useState(false);
+  const [zipError, setZipError] = useState(null);
+
+  const set = (k,v) => { if(k==='zip') setSearchZipCode(v); setAnswers(p=>({...p,[k]:v})); };
   const goTo = (s) => {
     setAnimKey(k=>k+1);
     if (s===10||s===1055||s===2035||s===15) { setPlanIdMode(null); setPlanIdResult(null); }
     setStep(s);
   };
   const autoAdvance = (n) => { if(autoTimer.current)clearTimeout(autoTimer.current); autoTimer.current=setTimeout(()=>goTo(n),350); };
-  const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); goTo(0); };
+  const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setRadiusZipcodes(''); setAvailableCounties([]); setSunfireSession(null); setIsLoadingZip(false); setZipError(null); goTo(0); };
 
   // Branch detection
   const isSmall = answers.empSize === "small";
@@ -922,6 +1008,187 @@ export default function EmployerCoverageTools() {
     setEmpAnalysis(generateEmployerAnalysis(a)); goTo(7);
   };
 
+  // ZIP code validation with backend
+  const handleZipContinue = async (nextStep) => {
+    if (!answers.zip || !/^\d{5}$/.test(answers.zip)) return;
+
+    setIsLoadingZip(true);
+    setZipError(null);
+
+    try {
+      const zipData = await lookupZip(answers.zip);
+
+      // Handle different API response formats
+      let counties = [];
+
+      if (Array.isArray(zipData)) {
+        counties = zipData.map(item => ({
+          code: item.countyCode || item.fips || '',
+          fips: item.countyCode || item.fips || '',
+          name: item.county || item.countyName || '',
+          state: item.state || '',
+          label: item.label || ''
+        }));
+      } else if (zipData.zips && Array.isArray(zipData.zips)) {
+        counties = zipData.zips.map(item => ({
+          code: item.countyCode || item.fips || '',
+          fips: item.countyCode || item.fips || '',
+          name: item.county || item.countyName || '',
+          state: item.state || '',
+          label: item.label || ''
+        }));
+      } else if (zipData.counties && Array.isArray(zipData.counties)) {
+        counties = zipData.counties;
+      } else if (zipData.data?.counties && Array.isArray(zipData.data.counties)) {
+        counties = zipData.data.counties;
+      } else if (zipData.county || zipData.fips || zipData.countyCode) {
+        counties = [{
+          code: zipData.fips || zipData.countyCode || zipData.county_code || '',
+          fips: zipData.fips || zipData.countyCode || zipData.county_code || '',
+          name: zipData.county || zipData.countyName || zipData.county_name || ''
+        }];
+      } else if (zipData.state && zipData.zip) {
+        counties = [{ code: '', fips: '', name: zipData.state || '' }];
+      }
+
+      // Fetch radius zipcodes for MCP search
+      const radiusZips = await getRadiusZipcodes(answers.zip);
+      setRadiusZipcodes(radiusZips || answers.zip);
+
+      if (counties.length > 1) {
+        setAvailableCounties(counties);
+      } else if (counties.length === 1) {
+        const selectedCounty = counties[0];
+        setCounty(selectedCounty.code || selectedCounty.fips || '');
+        setCountyName(selectedCounty.name || '');
+        setAvailableCounties([]);
+
+        // Create Sunfire session
+        try {
+          const session = await saveSession({
+            zip: answers.zip,
+            county: selectedCounty.code || selectedCounty.fips || '',
+            year: new Date().getFullYear()
+          });
+          setSunfireSession(session);
+        } catch (sessionErr) {
+          console.warn('Failed to create Sunfire session:', sessionErr);
+        }
+
+        goTo(nextStep);
+      } else {
+        console.warn('[ZIP Lookup] Could not parse counties from response:', zipData);
+        setZipError('No service area found for this ZIP code.');
+      }
+    } catch (error) {
+      console.error('[ZIP Lookup] Error:', error);
+      setZipError(error.message || 'Failed to validate ZIP code. Please try again.');
+    } finally {
+      setIsLoadingZip(false);
+    }
+  };
+
+  // Handle county selection when multiple counties available
+  const handleCountySelect = async (selectedCounty, nextStep) => {
+    setCounty(selectedCounty.code || selectedCounty.fips || '');
+    setCountyName(selectedCounty.name || '');
+    setAvailableCounties([]);
+
+    // Create Sunfire session
+    try {
+      const session = await saveSession({
+        zip: answers.zip,
+        county: selectedCounty.code || selectedCounty.fips || '',
+        year: new Date().getFullYear()
+      });
+      setSunfireSession(session);
+    } catch (sessionErr) {
+      console.warn('Failed to create Sunfire session:', sessionErr);
+    }
+
+    goTo(nextStep);
+  };
+
+  // Handle doctor selection from DoctorSearchStep
+  const handleDoctorComplete = async (selectedDoctors, nextStep) => {
+    setDoctors(selectedDoctors);
+    if (selectedDoctors.length === 0) {
+      set("wantSimilarNetwork", true);
+    }
+
+    // Add doctors to sunfire session (following TPP-Emily format)
+    if (sunfireSession?.customerCode && selectedDoctors.length > 0) {
+      try {
+        // Convert to sunfire session format: { id: number, name: string, npi?: string }
+        const sessionDoctors = selectedDoctors.map(doc => ({
+          id: parseInt(doc.id) || doc.id,
+          name: doc.name,
+          npi: doc.npi || String(doc.id)
+        }));
+
+        const updatedSession = await patchSession({
+          customerCode: sunfireSession.customerCode,
+          operations: [
+            { op: 'replace', path: '/doctors', value: sessionDoctors }
+          ]
+        });
+
+        if (updatedSession) {
+          setSunfireSession(prev => ({ ...prev, doctors: sessionDoctors }));
+        }
+      } catch (err) {
+        console.warn('Failed to add doctors to session:', err);
+      }
+    }
+
+    goTo(nextStep);
+  };
+
+  // Handle drug selection from DrugSearchStep
+  const handleDrugComplete = async (selectedDrugs, customerCode, nextStep) => {
+    setPrescriptions(selectedDrugs);
+
+    // Update customerCode if provided
+    const effectiveCustomerCode = customerCode || sunfireSession?.customerCode;
+    if (customerCode && sunfireSession) {
+      setSunfireSession(prev => ({ ...prev, customerCode }));
+    }
+
+    if (selectedDrugs.length === 0) {
+      set("wantSimilarRx", true);
+    }
+
+    // Add drugs to sunfire session (following TPP-Emily format)
+    if (effectiveCustomerCode && selectedDrugs.length > 0) {
+      try {
+        // Convert to sunfire session format: { id, name, qty, frequency, ps, pm }
+        const sessionDrugs = selectedDrugs.map(drug => ({
+          id: drug.id,
+          name: drug.name,
+          qty: drug.qty || 30,
+          frequency: drug.frequency || 30,
+          ps: drug.ps || 1,
+          pm: drug.pm || 30
+        }));
+
+        const updatedSession = await patchSession({
+          customerCode: effectiveCustomerCode,
+          operations: [
+            { op: 'replace', path: '/drugs', value: sessionDrugs }
+          ]
+        });
+
+        if (updatedSession) {
+          setSunfireSession(prev => ({ ...prev, drugs: sessionDrugs }));
+        }
+      } catch (err) {
+        console.warn('Failed to add drugs to session:', err);
+      }
+    }
+
+    goTo(nextStep);
+  };
+
   // ─── PLAN MATCH ENHANCEMENT (swap for Steadi API later) ───
   // Future: real implementation calls Steadi API for network/formulary comparison
   function enhanceWithPlanMatch(matched, rec) {
@@ -943,10 +1210,9 @@ export default function EmployerCoverageTools() {
     let rec = generateMedicareRec({...a, doctors, prescriptions});
     rec = enhanceWithPlanMatch(matchedPlan, rec);
     setMedRec(rec);
-    const pref = prefOverride || answers.preference;
-    const needsPlanInfo = (doctors.length === 0 || prescriptions.length === 0 || pref === "similar") && !matchedPlan;
-    if (needsPlanInfo) { setPlanIdResult(null); goTo(isSmall ? 1055 : 2035); }
-    else { goTo(isSmall ? 106 : 204); }
+    // Always show the employer card capture step (1055) to identify their plan
+    setPlanIdResult(null);
+    goTo(isSmall ? 1055 : 2035);
   };
   function mapToSlider(value, min, max) { return Math.min(100, Math.max(0, Math.round(((value - min) / (max - min)) * 100))); }
   const handleCobraSliderStart = () => {
@@ -1112,8 +1378,32 @@ export default function EmployerCoverageTools() {
           {sL("Your Location")}
           {sT("What's your ZIP code?")}
           {sS("Medicare plans, pricing, and doctor networks all depend on where you live.")}
-          <div>{fL("ZIP Code")}<input type="text" value={answers.zip||""} onChange={e=>set("zip",e.target.value)} placeholder="e.g. 60614" style={iSt} maxLength={5}/></div>
-          {(()=>{const zv=/^\d{5}$/.test(answers.zip||"");return <button onClick={zv?()=>goTo(103):undefined} style={{width:"100%",marginTop:28,background:zv?GREEN:BORDER,color:zv?"#fff":TEXT_LIGHT,border:"none",padding:"14px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,cursor:zv?"pointer":"default"}}>Continue →</button>})()}
+          <div>{fL("ZIP Code")}<input type="text" value={answers.zip||""} onChange={e=>{set("zip",e.target.value);setZipError(null);setAvailableCounties([]);}} placeholder="e.g. 60614" style={iSt} maxLength={5}/></div>
+
+          {/* County selection when multiple counties */}
+          {availableCounties.length > 1 && (
+            <div style={{marginTop:16}}>
+              {fL("Select your county")}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {availableCounties.map((c,i) => (
+                  <div key={i} onClick={()=>handleCountySelect(c,103)} style={{border:`2px solid ${county===(c.code||c.fips)?GREEN:BORDER}`,borderRadius:10,padding:"12px 16px",cursor:"pointer",background:county===(c.code||c.fips)?GREEN_LIGHT:"#fff",transition:"all 0.15s"}}>
+                    <div style={{fontSize:14,fontWeight:600,color:TEXT_DARK}}>{c.name}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Error message */}
+          {zipError && <div style={{marginTop:12,padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,color:"#dc2626",fontSize:13}}>{zipError}</div>}
+
+          {/* Continue button */}
+          {availableCounties.length <= 1 && (()=>{
+            const zv=/^\d{5}$/.test(answers.zip||"");
+            return <button onClick={zv&&!isLoadingZip?()=>handleZipContinue(103):undefined} disabled={isLoadingZip} style={{width:"100%",marginTop:28,background:zv?GREEN:BORDER,color:zv?"#fff":TEXT_LIGHT,border:"none",padding:"14px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,cursor:zv&&!isLoadingZip?"pointer":"default",opacity:isLoadingZip?0.7:1}}>
+              {isLoadingZip?"Validating...":"Continue →"}
+            </button>
+          })()}
           {btnB(101)}
         </div>)}
 
@@ -1121,20 +1411,28 @@ export default function EmployerCoverageTools() {
           {sL("Your Doctors")}
           {sT("Who are your current doctors?")}
           {sS("Adding your doctors helps us check which Medicare plans include them. You can skip this and add them later.")}
-          <DoctorSearchPanel doctors={doctors} onAdd={(doc)=>setDoctors(d=>[...d,doc])} onRemove={(i)=>setDoctors(d=>d.filter((_,j)=>j!==i))}/>
-          {btn(doctors.length===0?"Continue without adding doctors →":"Continue →",()=>{if(doctors.length===0)set("wantSimilarNetwork",true);goTo(104)})}
-          {doctors.length===0&&<div style={{fontSize:12,color:TEXT_LIGHT,textAlign:"center",marginTop:6,lineHeight:1.5}}>We'll find you a plan that matches your current plan's network as closely as possible.</div>}
-          <button onClick={()=>goTo(102)} style={{width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back</button>
+          <DoctorSearchStep
+            zipCode={radiusZipcodes || answers.zip}
+            county={countyName}
+            selectedDoctors={doctors}
+            onComplete={(selectedDoctors) => handleDoctorComplete(selectedDoctors, 104)}
+            onBack={() => goTo(102)}
+          />
         </div>)}
 
         {step===104&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
           {sL("Your Prescriptions")}
           {sT("What medications do you take?")}
           {sS("This helps us match you with drug plans that cover your specific prescriptions.")}
-          <DrugSearchPanel prescriptions={prescriptions} onAdd={(rx)=>setPrescriptions(d=>[...d,rx])} onRemove={(i)=>setPrescriptions(d=>d.filter((_,j)=>j!==i))}/>
-          {btn(prescriptions.length===0?"Continue without adding medications →":"Continue →",()=>{if(prescriptions.length===0)set("wantSimilarRx",true);goTo(105)})}
-          {prescriptions.length===0&&<div style={{fontSize:12,color:TEXT_LIGHT,textAlign:"center",marginTop:6,lineHeight:1.5}}>We'll match you to a plan with similar drug coverage to what you have.</div>}
-          <button onClick={()=>goTo(103)} style={{width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back</button>
+          <DrugSearchStep
+            zipCode={answers.zip}
+            county={county}
+            countyName={countyName}
+            customerCode={sunfireSession?.customerCode}
+            selectedDrugs={prescriptions}
+            onComplete={(selectedDrugs, customerCode) => handleDrugComplete(selectedDrugs, customerCode, 105)}
+            onBack={() => goTo(103)}
+          />
         </div>)}
 
         {step===105&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
@@ -1186,7 +1484,7 @@ export default function EmployerCoverageTools() {
 
           {!planIdResult ? (planIdMode!=="search" ? (<>
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>document.getElementById("planIdCard1055").click()} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>setShowInsuranceCamera(1055)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
@@ -1195,11 +1493,6 @@ export default function EmployerCoverageTools() {
                 </div>
               </div>
             </div>
-            <input id="planIdCard1055" type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={async(e)=>{
-              const file=e.target.files?.[0]; if(!file)return;
-              const plan = await extractPlanFromCard(file);
-              setPlanIdResult(plan);
-            }}/>
 
             {/* Option 2: Plan search — standard card */}
             <OptionCard title="Search for your employer and plan" desc="Type your employer name or insurance carrier and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
@@ -1743,7 +2036,7 @@ export default function EmployerCoverageTools() {
 
           {!planIdResult ? (planIdMode!=="search" ? (<>
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>document.getElementById("planIdCard2035").click()} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>setShowInsuranceCamera(2035)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
@@ -1752,11 +2045,6 @@ export default function EmployerCoverageTools() {
                 </div>
               </div>
             </div>
-            <input id="planIdCard2035" type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={async(e)=>{
-              const file=e.target.files?.[0]; if(!file)return;
-              const plan = await extractPlanFromCard(file);
-              setPlanIdResult(plan);
-            }}/>
 
             {/* Option 2: Plan search — standard card */}
             <OptionCard title="Search for your employer and plan" desc="Type your employer name or insurance carrier and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
@@ -1806,7 +2094,7 @@ export default function EmployerCoverageTools() {
 
           {!cobraPlanId ? (planIdMode!=="search" ? (<>
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>document.getElementById("cobraCardInput10").click()} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>setShowInsuranceCamera(10)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
@@ -1815,11 +2103,6 @@ export default function EmployerCoverageTools() {
                 </div>
               </div>
             </div>
-            <input id="cobraCardInput10" type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={async(e)=>{
-              const file=e.target.files?.[0]; if(!file)return;
-              const plan = await extractPlanFromCard(file);
-              setCobraPlanId(plan);
-            }}/>
 
             {/* Option 2: Plan search — standard card */}
             <OptionCard title="Search for your employer and plan" desc="Type your former employer's name or insurance carrier and we'll find your plan." selected={false} onClick={()=>setPlanIdMode("search")}/>
@@ -2524,6 +2807,25 @@ export default function EmployerCoverageTools() {
         input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:${GREEN};cursor:pointer;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.15)}
         @media(max-width:480px){h2{font-size:20px !important}}
       `}</style>
+
+      {/* Insurance Card Camera Capture Overlay */}
+      {showInsuranceCamera && (
+        <InsuranceCardCapture
+          key={showInsuranceCamera}
+          title="Position Your Insurance Card"
+          onCapture={async (file) => {
+            const captureStep = showInsuranceCamera;
+            setShowInsuranceCamera(null);
+            const plan = await extractPlanFromCard(file);
+            if (captureStep === 10) {
+              setCobraPlanId(plan);
+            } else {
+              setPlanIdResult(plan);
+            }
+          }}
+          onBack={() => setShowInsuranceCamera(null)}
+        />
+      )}
     </div>
   );
 }
