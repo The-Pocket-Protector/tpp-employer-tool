@@ -4,16 +4,6 @@
 
 import { railwayApi, handleApiError } from '../lib/axios';
 
-// Mock data for development/fallback (sample BlueCross BlueShield card)
-const MOCK_INSURANCE_EXTRACT = {
-  carrierName: "BlueCross BlueShield",
-  memberId: "XOX813969028",
-  subscriberName: "PATRICK KAHN",
-  groupNumber: "432872",
-  planType: "PPO",
-  rxBin: "003858",
-  rxPcn: "A4"
-};
 
 /**
  * Extract insurance card data from image
@@ -45,10 +35,8 @@ export async function extractInsuranceCard(file) {
       raw: data
     };
   } catch (error) {
-    console.warn('Insurance card extraction API failed, using mock data:', error.message);
-    // Return mock data after simulated delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return MOCK_INSURANCE_EXTRACT;
+    console.error('Insurance card extraction failed:', error.message);
+    throw new Error('Failed to extract insurance card. Please try again.');
   }
 }
 
