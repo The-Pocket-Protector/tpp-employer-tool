@@ -6,6 +6,7 @@ import DrugSearchStep from "./components/DrugSearchStep";
 import CardCaptureStep from "./components/CardCaptureStep";
 import InsuranceCardCapture from "./components/InsuranceCardCapture";
 import EligibilityCheckStep from "./components/EligibilityCheckStep";
+import { extractInsuranceCard } from "./services/insurance-card.service";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
 const TEXT_DARK = "#1e293b", TEXT_MED = "#475569", TEXT_LIGHT = "#94a3b8", BORDER = "#e2e8f0";
@@ -131,15 +132,19 @@ const EMPLOYER_PLANS_DB = [
   {id:"ep_15",planName:"Aetna Open Choice PPO",carrier:"Aetna",employer:"Umbrella Corporation",premium:295,deductible:2500,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true},
 ];
 
-const DUMMY_MATCHED_PLAN = {carrierName:"BlueCross BlueShield",memberId:"XOX813969028",subscriberName:"PATRICK KAHN",matched:true};
-
-// ─── STUB FUNCTIONS (TO BE MIGRATED TO SERVICES) ───
-// TODO: Migrate to real service - see src/services/ for patterns
-// Import: import { extractInsuranceCard } from './services/insurance.service';
+// ─── CARD EXTRACTION FUNCTION ───
 async function extractPlanFromCard(imageFile) {
-  // STUB: Replace with real API call to extract plan from card image
-  // Real implementation should POST to /api/insurance/extract with FormData
-  return new Promise(r => setTimeout(() => r(DUMMY_MATCHED_PLAN), 1500));
+  const cardData = await extractInsuranceCard(imageFile);
+  // Extract the 3 main fields from the card
+  return {
+    carrierName: cardData.carrierName,
+    memberId: cardData.memberId,
+    subscriberName: cardData.subscriberName,
+    // For display compatibility
+    planName: cardData.carrierName || 'Insurance Plan',
+    carrier: cardData.carrierName,
+    matched: true
+  };
 }
 
 // TODO: Migrate to real service - see src/services/sunfire.service.js for patterns
@@ -954,6 +959,8 @@ export default function EmployerCoverageTools() {
   const [planIdResult, setPlanIdResult] = useState(null); // inline confirmation on plan ID step
   const [cardUploading, setCardUploading] = useState(false);
   const [cardImage, setCardImage] = useState(null);
+  const [isExtractingCard, setIsExtractingCard] = useState(false); // shows loader after camera capture
+  const [extractionStatus, setExtractionStatus] = useState(0); // cycles through status messages
   const [spouseData, setSpouseData] = useState({knowsDetails:"",spouseAlso65:""});
   const [retireeData, setRetireeData] = useState({cost:"",satisfaction:""});
   const [maNeeds, setMaNeeds] = useState({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""});
@@ -984,6 +991,26 @@ export default function EmployerCoverageTools() {
   };
   const autoAdvance = (n) => { if(autoTimer.current)clearTimeout(autoTimer.current); autoTimer.current=setTimeout(()=>goTo(n),350); };
   const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setRadiusZipcodes(''); setAvailableCounties([]); setSunfireSession(null); setIsLoadingZip(false); setZipError(null); goTo(0); };
+
+  // Extraction status cycling messages
+  const extractionMessages = [
+    "Reading your insurance card details...",
+    "Extracting member information...",
+    "Identifying your plan type...",
+    "Matching with our database..."
+  ];
+
+  // Cycle through extraction status messages while extracting
+  useEffect(() => {
+    if (!isExtractingCard) {
+      setExtractionStatus(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setExtractionStatus(prev => (prev + 1) % extractionMessages.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isExtractingCard, extractionMessages.length]);
 
   // Branch detection
   const isSmall = answers.empSize === "small";
@@ -1826,31 +1853,58 @@ export default function EmployerCoverageTools() {
 
         {/* STEP 18: PLAN CONFIRMATION */}
         {step===18&&matchedPlan&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
-          {sL("Confirm Your Plan")}
-          {sT("Here's what we found — does this look right?")}
+          {sL(matchedPlan.premium != null ? "Confirm Your Plan" : "Card Scanned")}
+          {sT(matchedPlan.premium != null ? "Here's what we found — does this look right?" : "We extracted your card details")}
 
           <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:20,background:"#fff",marginBottom:24}}>
-            <div style={{fontFamily:heading,fontSize:18,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{matchedPlan.planName}</div>
-            <div style={{fontSize:13,color:TEXT_MED,marginBottom:16}}>{matchedPlan.carrier}{matchedPlan.employer?` · ${matchedPlan.employer}`:""}{matchedPlan.employerName?` · ${matchedPlan.employerName}`:""}</div>
-
-            {[
-              ["Monthly Premium","$"+matchedPlan.premium],
-              ["Annual Deductible","$"+(matchedPlan.deductible||0).toLocaleString()],
-              ["OOP Maximum","$"+(matchedPlan.oopMax||0).toLocaleString()],
-              ["PCP Copay","$"+matchedPlan.copay],
-              ["Network Type",matchedPlan.networkType],
-              ["Rx Coverage",matchedPlan.rxCoverage?"Included":"Not included"]
-            ].map(([label,val],i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:`1px solid ${BORDER}`}}>
-                <div style={{fontSize:13,color:TEXT_MED}}>{label}</div>
-                <div style={{fontSize:14,color:TEXT_DARK,fontWeight:600}}>{val}</div>
+            {/* Card extraction view - show 3 main fields */}
+            {matchedPlan.premium == null ? (
+              <div style={{display:"grid",gap:16}}>
+                <div>
+                  <div style={{fontSize:12,color:TEXT_LIGHT,marginBottom:4}}>Carrier Name</div>
+                  <div style={{fontSize:18,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>{matchedPlan.carrierName || 'Not found'}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:TEXT_LIGHT,marginBottom:4}}>Identification Number</div>
+                  <div style={{fontSize:18,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>{matchedPlan.memberId || 'Not found'}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:12,color:TEXT_LIGHT,marginBottom:4}}>Subscriber Name</div>
+                  <div style={{fontSize:18,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>{matchedPlan.subscriberName || 'Not found'}</div>
+                </div>
               </div>
-            ))}
+            ) : (
+              <>
+                <div style={{fontFamily:heading,fontSize:18,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{matchedPlan.planName}</div>
+                <div style={{fontSize:13,color:TEXT_MED,marginBottom:16}}>{matchedPlan.carrier}{matchedPlan.employer?` · ${matchedPlan.employer}`:""}{matchedPlan.employerName?` · ${matchedPlan.employerName}`:""}</div>
+                {[
+                  ["Monthly Premium","$"+matchedPlan.premium],
+                  ["Annual Deductible","$"+(matchedPlan.deductible||0).toLocaleString()],
+                  ["OOP Maximum","$"+(matchedPlan.oopMax||0).toLocaleString()],
+                  ["PCP Copay","$"+matchedPlan.copay],
+                  ["Network Type",matchedPlan.networkType],
+                  ["Rx Coverage",matchedPlan.rxCoverage?"Included":"Not included"]
+                ].map(([label,val],i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:`1px solid ${BORDER}`}}>
+                    <div style={{fontSize:13,color:TEXT_MED}}>{label}</div>
+                    <div style={{fontSize:14,color:TEXT_DARK,fontWeight:600}}>{val}</div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
-          <button onClick={()=>{set("premium",String(matchedPlan.premium));set("deductible",String(matchedPlan.deductible));set("oopMax",String(matchedPlan.oopMax));goTo(5)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>Yes, this is right — continue →</button>
-
-          <button onClick={()=>{set("premium",String(matchedPlan.premium));set("deductible",String(matchedPlan.deductible));set("oopMax",String(matchedPlan.oopMax));goTo(2)}} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>Some of this doesn't look right — let me adjust</button>
+          {matchedPlan.premium != null ? (
+            <>
+              <button onClick={()=>{set("premium",String(matchedPlan.premium));set("deductible",String(matchedPlan.deductible));set("oopMax",String(matchedPlan.oopMax));goTo(5)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>Yes, this is right — continue</button>
+              <button onClick={()=>{set("premium",String(matchedPlan.premium));set("deductible",String(matchedPlan.deductible));set("oopMax",String(matchedPlan.oopMax));goTo(2)}} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>Some of this doesn't look right — let me adjust</button>
+            </>
+          ) : (
+            <>
+              <button onClick={()=>goTo(2)} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>This is correct — continue</button>
+              <button onClick={()=>{setCardImage(null);goTo(16)}} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>Retake photo</button>
+            </>
+          )}
 
           {btnB(15)}
         </div>)}
@@ -2840,15 +2894,30 @@ export default function EmployerCoverageTools() {
           onCapture={async (file) => {
             const captureStep = showInsuranceCamera;
             setShowInsuranceCamera(null);
-            const plan = await extractPlanFromCard(file);
-            if (captureStep === 10) {
-              setCobraPlanId(plan);
-            } else {
-              setPlanIdResult(plan);
+            setIsExtractingCard(true);
+            try {
+              const plan = await extractPlanFromCard(file);
+              if (captureStep === 10) {
+                setCobraPlanId(plan);
+              } else {
+                setPlanIdResult(plan);
+              }
+            } finally {
+              setIsExtractingCard(false);
             }
           }}
           onBack={() => setShowInsuranceCamera(null)}
         />
+      )}
+
+      {/* Card Extraction Loading Overlay */}
+      {isExtractingCard && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(255,255,255,0.95)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:9999}}>
+          <div style={{width:48,height:48,border:`4px solid ${BORDER}`,borderTopColor:GREEN,borderRadius:"50%",animation:"spin 1s linear infinite",marginBottom:20}}></div>
+          <div style={{fontFamily:heading,fontSize:18,fontWeight:700,color:TEXT_DARK,marginBottom:8}}>Extracting Card Information</div>
+          <div style={{fontSize:14,color:TEXT_MED}}>Reading your insurance card details...</div>
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
       )}
     </div>
   );
