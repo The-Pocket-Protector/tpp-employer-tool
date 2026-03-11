@@ -21,7 +21,7 @@ export async function extractInsuranceCard(file) {
 
     // Normalize response data - handle both Medicare and generic insurance card formats
     const data = response.data;
-    return {
+    const extracted = {
       // Carrier: Medicare cards don't have carrier, generic cards do
       carrierName: data.carrierName || data.carrier || data.insuranceCompany || data.payerName || (data.medicareNumber ? 'Medicare' : null),
       // Member ID: could be medicareNumber, memberId, identificationNumber, or other variations
@@ -34,6 +34,18 @@ export async function extractInsuranceCard(file) {
       rxPcn: data.rxPcn || data.pcn,
       raw: data
     };
+
+    // Validate required fields are present
+    if (!extracted.carrierName || !extracted.memberId || !extracted.subscriberName) {
+      console.error('Card extraction missing required fields:', {
+        hasCarrier: !!extracted.carrierName,
+        hasMemberId: !!extracted.memberId,
+        hasSubscriber: !!extracted.subscriberName
+      });
+      throw new Error('Could not read card details. Please try again with a clearer photo.');
+    }
+
+    return extracted;
   } catch (error) {
     console.error('Insurance card extraction failed:', error.message);
     throw new Error('Failed to extract insurance card. Please try again.');
