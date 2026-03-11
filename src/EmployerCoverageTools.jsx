@@ -970,6 +970,7 @@ export default function EmployerCoverageTools() {
   // Eligibility check state
   const [insuranceCardData, setInsuranceCardData] = useState(null);
   const [eligibilityResult, setEligibilityResult] = useState(null);
+  const [recommendationData, setRecommendationData] = useState(null);
   const [guidePrefs, setGuidePrefs] = useState(new Set());
   const [guideMatch, setGuideMatch] = useState(null);
   const [recSource, setRecSource] = useState(0); // which step the rec came from
@@ -2864,8 +2865,8 @@ export default function EmployerCoverageTools() {
         );})()}
 
 
-        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-346) ═══ */}
-        {step>=340&&step<=346&&(
+        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-348) ═══ */}
+        {step>=340&&step<=348&&(
           <EligibilityCheckStep
             currentStep={step}
             goToStep={goTo}
@@ -2873,7 +2874,13 @@ export default function EmployerCoverageTools() {
             setCardData={setInsuranceCardData}
             eligibilityResult={eligibilityResult}
             setEligibilityResult={setEligibilityResult}
-            onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(106)}}
+            recommendationData={recommendationData}
+            setRecommendationData={setRecommendationData}
+            zipCode={answers.zip}
+            county={county}
+            countyName={countyName}
+            customerCode={sunfireSession?.customerCode}
+            onComplete={(result)=>{if(result){setEligibilityResult(result);if(result.recommendation)setRecommendationData(result.recommendation);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(106)}}
             onReset={()=>goTo(0)}
           />
         )}
