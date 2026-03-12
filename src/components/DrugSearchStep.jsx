@@ -178,7 +178,7 @@ export default function DrugSearchStep({
 
       if (dosageList.length > 0) {
         setSelectedDosage(dosageList[0]);
-        setQuantity(dosageList[0].qty || 30);
+        setQuantity(dosageList[0].packages?.[0]?.pm || 30);
       }
     } catch (err) {
       console.error('Error loading dosages:', err);
@@ -281,7 +281,7 @@ export default function DrugSearchStep({
               onChange={(e) => {
                 const dosage = dosages.find(d => d.id === parseInt(e.target.value));
                 setSelectedDosage(dosage);
-                if (dosage?.qty) setQuantity(dosage.qty);
+                if (dosage?.packages?.[0]?.pm) setQuantity(dosage.packages[0].pm);
               }}
               style={{
                 width: '100%',
