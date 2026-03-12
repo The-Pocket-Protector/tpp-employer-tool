@@ -312,7 +312,7 @@ export default function DrugSearchStep({
               fontFamily: body,
               marginBottom: 6
             }}>
-              Quantity per fill
+              How many per refill?
             </label>
             <input
               type="number"
