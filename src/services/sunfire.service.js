@@ -303,7 +303,8 @@ export const getRecommendationsV6 = async (customerCode, year, payload = {}) => 
       allow_csnp: payload.allow_csnp ?? false,
       ...(payload.doctor_visits_per_year && { doctor_visits_per_year: payload.doctor_visits_per_year }),
       ...(payload.dental_needs && { dental_needs: payload.dental_needs }),
-      ...(payload.has_second_home !== undefined && { has_second_home: payload.has_second_home })
+      ...(payload.has_second_home !== undefined && { has_second_home: payload.has_second_home }),
+      ...(payload.is_ma_only !== undefined && { is_ma_only: payload.is_ma_only })
     };
 
     const response = await sunfireApi.post(
