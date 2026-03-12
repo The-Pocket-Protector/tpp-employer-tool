@@ -179,6 +179,8 @@ export default function DrugSearchStep({
       if (dosageList.length > 0) {
         setSelectedDosage(dosageList[0]);
         setQuantity(dosageList[0].packages?.[0]?.pm || 30);
+        // Default to weekly for injections, daily for other forms
+        setFrequency(dosageList[0].form === 'INJ' ? 'once_weekly' : 'once_daily');
       }
     } catch (err) {
       console.error('Error loading dosages:', err);
@@ -282,6 +284,8 @@ export default function DrugSearchStep({
                 const dosage = dosages.find(d => d.id === parseInt(e.target.value));
                 setSelectedDosage(dosage);
                 if (dosage?.packages?.[0]?.pm) setQuantity(dosage.packages[0].pm);
+                // Default to weekly for injections, daily for other forms
+                setFrequency(dosage?.form === 'INJ' ? 'once_weekly' : 'once_daily');
               }}
               style={{
                 width: '100%',
