@@ -49,7 +49,19 @@ export default function DrugSearchStep({
   const [dosages, setDosages] = useState([]);
   const [selectedDosage, setSelectedDosage] = useState(null);
   const [quantity, setQuantity] = useState(30);
+  const [frequency, setFrequency] = useState('once_daily');
   const [isLoadingDosages, setIsLoadingDosages] = useState(false);
+
+  // Frequency options for medication
+  const FREQUENCY_OPTIONS = [
+    { value: 'once_daily', label: 'Once daily', daysSupply: 30 },
+    { value: 'twice_daily', label: 'Twice daily', daysSupply: 15 },
+    { value: 'three_times_daily', label: 'Three times daily', daysSupply: 10 },
+    { value: 'four_times_daily', label: 'Four times daily', daysSupply: 7 },
+    { value: 'once_weekly', label: 'Once weekly', daysSupply: 210 },
+    { value: 'every_other_day', label: 'Every other day', daysSupply: 60 },
+    { value: 'as_needed', label: 'As needed (PRN)', daysSupply: 30 }
+  ];
 
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
@@ -181,6 +193,8 @@ export default function DrugSearchStep({
   const handleAddDrug = () => {
     if (!pendingDrug || !selectedDosage) return;
 
+    const frequencyOption = FREQUENCY_OPTIONS.find(f => f.value === frequency);
+
     const newDrug = {
       id: selectedDosage.id,
       drugNameId: pendingDrug.id,
@@ -189,7 +203,9 @@ export default function DrugSearchStep({
       strengthUOM: selectedDosage.strengthUOM || '',
       form: selectedDosage.form || '',
       qty: quantity,
-      frequency: selectedDosage.frequency || 30,
+      frequency: frequencyOption?.daysSupply || 30,
+      frequencyLabel: frequencyOption?.label || 'Once daily',
+      frequencyValue: frequency,
       ps: selectedDosage.packages?.[0]?.pkgId || 1,
       pm: selectedDosage.packages?.[0]?.pm || 30
     };
@@ -199,6 +215,7 @@ export default function DrugSearchStep({
     setDosages([]);
     setSelectedDosage(null);
     setQuantity(30);
+    setFrequency('once_daily');
     inputRef.current?.focus();
   };
 
@@ -208,6 +225,7 @@ export default function DrugSearchStep({
     setDosages([]);
     setSelectedDosage(null);
     setQuantity(30);
+    setFrequency('once_daily');
     inputRef.current?.focus();
   };
 
@@ -286,7 +304,7 @@ export default function DrugSearchStep({
           </div>
 
           {/* Quantity input */}
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={{
               display: 'block',
               fontSize: 13,
@@ -312,6 +330,40 @@ export default function DrugSearchStep({
                 fontFamily: body
               }}
             />
+          </div>
+
+          {/* Frequency selection */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{
+              display: 'block',
+              fontSize: 13,
+              color: TEXT_MED,
+              fontFamily: body,
+              marginBottom: 6
+            }}>
+              How often do you take this?
+            </label>
+            <select
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value)}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '12px 14px',
+                fontSize: 14,
+                border: `2px solid ${BORDER}`,
+                borderRadius: 8,
+                fontFamily: body,
+                background: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              {FREQUENCY_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Add/Cancel buttons */}
@@ -512,7 +564,7 @@ export default function DrugSearchStep({
                   fontFamily: body,
                   marginTop: 2
                 }}>
-                  {drug.strength} {drug.form} - Qty: {drug.qty}
+                  {drug.strength} {drug.form} - Qty: {drug.qty} - {drug.frequencyLabel || 'Once daily'}
                 </div>
               </div>
               <button
