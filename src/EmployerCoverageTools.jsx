@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { lookupZip, saveSession, patchSession, searchProviders, searchDrugs as searchDrugsApi, getDrugDosages } from "./services/sunfire.service";
+import { lookupZip, saveSession, patchSession, searchProviders, searchDrugs as searchDrugsApi, getDrugDosages, getRecommendationsV6 } from "./services/sunfire.service";
 import { getRadiusZipcodes } from "./services/zip.service";
 import DoctorSearchStep from "./components/DoctorSearchStep";
 import DrugSearchStep from "./components/DrugSearchStep";
@@ -991,6 +991,29 @@ export default function EmployerCoverageTools() {
     return () => clearInterval(interval);
   }, [isExtractingCard, extractionMessages.length]);
 
+  // Fetch V6 recommendations when entering step 1051
+  useEffect(() => {
+    if (step !== 1051) return;
+    const customerCode = sunfireSession?.customerCode;
+    const fetchRecs = async () => {
+      try {
+        const year = new Date().getFullYear().toString();
+        const result = await getRecommendationsV6(customerCode, year, {
+          medicaid_payload: {},
+          allow_dsnp: false,
+          allow_csnp: false,
+          ...(answers.preference === "cheaper" && { is_ma_only: true })
+        });
+        setRecommendationData(result);
+      } catch (err) {
+        console.error('V6 recommendations failed:', err);
+        setRecommendationData(null);
+      }
+      goTo(1052);
+    };
+    fetchRecs();
+  }, [step, sunfireSession?.customerCode, answers.preference]);
+
   // Branch detection
   const isSmall = answers.empSize === "small";
   const isCobra = answers.status === "cobra";
@@ -1221,14 +1244,9 @@ export default function EmployerCoverageTools() {
     }
     return enhanced;
   }
-  const handleMedRec = (prefOverride) => { setRecSource(isSmall ? 105 : 203);
-    const a = prefOverride ? {...answers, preference: prefOverride} : answers;
-    let rec = generateMedicareRec({...a, doctors, prescriptions});
-    rec = enhanceWithPlanMatch(matchedPlan, rec);
-    setMedRec(rec);
-    // Always show the employer card capture step (1055) to identify their plan
-    setPlanIdResult(null);
-    goTo(isSmall ? 1055 : 2035);
+  const handleMedRec = (prefOverride) => {
+    set("preference", prefOverride);
+    goTo(1051); // Go to V6 loading step
   };
   function mapToSlider(value, min, max) { return Math.min(100, Math.max(0, Math.round(((value - min) / (max - min)) * 100))); }
   const handleCobraSliderStart = () => {
@@ -1490,6 +1508,109 @@ export default function EmployerCoverageTools() {
           {btnB(104)}
         </div>)}
 
+        {/* ═══ STEP 1051: V6 LOADING ═══ */}
+        {step===1051&&(
+          <div style={{animation:"fadeUp 0.35s ease",textAlign:"center",padding:"40px 0"}}>
+            <div style={{fontSize:13,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:TEXT_LIGHT,marginBottom:8,fontFamily:heading}}>
+              Analyzing Plans
+            </div>
+            <div style={{fontFamily:heading,fontSize:24,fontWeight:800,color:TEXT_DARK,marginBottom:16,lineHeight:1.3}}>
+              Finding the best plan<br/>for you...
+            </div>
+            <div style={{width:48,height:48,border:`4px solid ${BORDER}`,borderTopColor:GREEN,borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 24px"}}>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ STEP 1052: SHOW RECOMMENDATION ═══ */}
+        {step===1052&&(()=>{
+          const plan = recommendationData?.planOverview || {};
+          const benefits = (recommendationData?.benefits || []).filter(b => b.newValue && b.newValue !== "Not specified");
+          const hasPlan = plan.name || benefits.length > 0;
+          // Extract just the dollar amount from premium (handles "$0", "$0 per month", etc.)
+          const premiumRaw = plan.premium || "$0";
+          const premiumAmount = premiumRaw.replace(/\s*(per month|\/mo|monthly).*$/i, "").trim();
+
+          // Fallback if no recommendation data
+          if (!hasPlan) {
+            return (
+              <div style={{animation:"fadeUp 0.35s ease"}}>
+                {sL("Recommendations")}
+                {sT("We're still gathering plan options")}
+                {sS("We couldn't find a specific recommendation at this time, but you can still verify your eligibility to see available plans.")}
+                <button onClick={() => goTo(340)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
+                  Verify Your Eligibility →
+                </button>
+                <button onClick={() => goTo(105)} style={{width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>
+                  ← Back
+                </button>
+              </div>
+            );
+          }
+
+          return (
+          <div style={{animation:"fadeUp 0.35s ease"}}>
+            {sL("Your Recommendation")}
+            {sT(plan.name || "Recommended Plan")}
+            {sS("Based on your preferences, here's a plan that could work well for you.")}
+
+            {/* Premium Card */}
+            <div style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,marginBottom:20,textAlign:"center"}}>
+              <div style={{fontSize:13,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:TEXT_MED,marginBottom:4}}>Monthly Premium</div>
+              <div style={{fontSize:36,fontWeight:800,color:GREEN,fontFamily:heading,lineHeight:1.2}}>
+                {premiumAmount}
+              </div>
+              <div style={{fontSize:13,color:TEXT_MED}}>per month</div>
+            </div>
+
+            {/* Plan Benefits Section */}
+            {benefits.length > 0 && (
+              <div style={{marginBottom:24}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+                  <div style={{fontSize:16,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>Plan Benefits</div>
+                  <div style={{flex:1,height:2,background:GREEN_BORDER,borderRadius:1}}/>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                  {benefits.map((b, i) => (
+                    <div key={i} style={{background:"#fff",border:`1px solid ${BORDER}`,borderRadius:12,padding:16}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                        <div style={{width:28,height:28,borderRadius:"50%",background:GREEN_LIGHT,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                          <span style={{color:GREEN,fontSize:14,fontWeight:700}}>✓</span>
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:15,fontWeight:700,color:TEXT_DARK,fontFamily:heading,marginBottom:4}}>{b.name || b.category}</div>
+                          <div style={{fontSize:18,fontWeight:700,color:GREEN,fontFamily:heading,marginBottom:6}}>{b.newValue}</div>
+                          {b.whyBetter && <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.5}}>{b.whyBetter}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Additional Plan Details */}
+            {(plan.carrier || plan.planType || plan.contractId) && (
+              <div style={{background:BG_SUBTLE,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginBottom:24}}>
+                <div style={{fontSize:13,fontWeight:600,color:TEXT_LIGHT,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>Plan Details</div>
+                <div style={{display:"grid",gap:8}}>
+                  {plan.carrier && <div style={{fontSize:14,color:TEXT_MED}}><span style={{fontWeight:600,color:TEXT_DARK}}>Carrier:</span> {plan.carrier}</div>}
+                  {plan.planType && <div style={{fontSize:14,color:TEXT_MED}}><span style={{fontWeight:600,color:TEXT_DARK}}>Type:</span> {plan.planType}</div>}
+                  {plan.contractId && <div style={{fontSize:14,color:TEXT_MED}}><span style={{fontWeight:600,color:TEXT_DARK}}>Contract ID:</span> {plan.contractId}</div>}
+                </div>
+              </div>
+            )}
+
+            <button onClick={() => goTo(340)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
+              Verify Your Eligibility →
+            </button>
+
+            <button onClick={() => goTo(105)} style={{width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>
+              ← Back
+            </button>
+          </div>
+        );})()}
 
         {step===1055&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
           {sL("One More Thing")}
@@ -2860,8 +2981,8 @@ export default function EmployerCoverageTools() {
         );})()}
 
 
-        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-348) ═══ */}
-        {step>=340&&step<=348&&(
+        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-346) ═══ */}
+        {step>=340&&step<=346&&(
           <EligibilityCheckStep
             currentStep={step}
             goToStep={goTo}
@@ -2869,15 +2990,42 @@ export default function EmployerCoverageTools() {
             setCardData={setInsuranceCardData}
             eligibilityResult={eligibilityResult}
             setEligibilityResult={setEligibilityResult}
-            recommendationData={recommendationData}
-            setRecommendationData={setRecommendationData}
             zipCode={answers.zip}
             county={county}
             countyName={countyName}
             customerCode={sunfireSession?.customerCode}
-            onComplete={(result)=>{if(result){setEligibilityResult(result);if(result.recommendation)setRecommendationData(result.recommendation);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(106)}}
+            onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(349)}}
             onReset={()=>goTo(0)}
           />
+        )}
+
+        {/* ═══ STEP 349: ENROLLMENT PLACEHOLDER ═══ */}
+        {step===349&&(
+          <div style={{animation:"fadeUp 0.35s ease"}}>
+            {sL("Next Steps")}
+            {sT("You're Ready to Enroll")}
+            {sS("Your eligibility has been verified. A licensed Medicare advisor will help you complete your enrollment.")}
+
+            {/* Success indicator */}
+            <div style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,marginBottom:24,textAlign:"center"}}>
+              <div style={{width:56,height:56,borderRadius:"50%",background:GREEN,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+                <span style={{color:"#fff",fontSize:28,fontWeight:700}}>✓</span>
+              </div>
+              <div style={{fontSize:16,fontWeight:700,color:TEXT_DARK,fontFamily:heading,marginBottom:4}}>Eligibility Verified</div>
+              <div style={{fontSize:14,color:TEXT_MED}}>Your information has been confirmed</div>
+            </div>
+
+            {/* Placeholder notice */}
+            <div style={{background:BG_SUBTLE,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginBottom:24}}>
+              <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6,textAlign:"center"}}>
+                <strong>Coming Soon:</strong> Online enrollment will be available here. For now, please contact us to complete your enrollment.
+              </div>
+            </div>
+
+            <button onClick={() => goTo(1052)} style={{width:"100%",background:"none",border:`2px solid ${BORDER}`,color:TEXT_MED,padding:"14px 28px",borderRadius:12,fontSize:15,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>
+              ← Back to Recommendation
+            </button>
+          </div>
         )}
 
       </div>
