@@ -297,7 +297,7 @@ export default function DrugSearchStep({
             >
               {dosages.map(dosage => (
                 <option key={dosage.id} value={dosage.id}>
-                  {dosage.strength} {dosage.form}
+                  {dosage.strength}{dosage.strengthUOM}
                 </option>
               ))}
             </select>
@@ -564,7 +564,7 @@ export default function DrugSearchStep({
                   fontFamily: body,
                   marginTop: 2
                 }}>
-                  {drug.strength} {drug.form} - Qty: {drug.qty} - {drug.frequencyLabel || 'Once daily'}
+                  {drug.strength}{drug.strengthUOM} - Qty: {drug.qty} - {drug.frequencyLabel || 'Once daily'}
                 </div>
               </div>
               <button
