@@ -178,7 +178,9 @@ export default function DrugSearchStep({
 
       if (dosageList.length > 0) {
         setSelectedDosage(dosageList[0]);
-        setQuantity(dosageList[0].qty || 30);
+        setQuantity(dosageList[0].packages?.[0]?.pm || 30);
+        // Default to weekly for injections, daily for other forms
+        setFrequency(dosageList[0].form === 'INJ' ? 'once_weekly' : 'once_daily');
       }
     } catch (err) {
       console.error('Error loading dosages:', err);
@@ -262,7 +264,7 @@ export default function DrugSearchStep({
             fontFamily: heading,
             marginBottom: 16
           }}>
-            Configure: {pendingDrug.name}
+            {pendingDrug.name}
           </div>
 
           {/* Dosage selection */}
@@ -281,7 +283,9 @@ export default function DrugSearchStep({
               onChange={(e) => {
                 const dosage = dosages.find(d => d.id === parseInt(e.target.value));
                 setSelectedDosage(dosage);
-                if (dosage?.qty) setQuantity(dosage.qty);
+                if (dosage?.packages?.[0]?.pm) setQuantity(dosage.packages[0].pm);
+                // Default to weekly for injections, daily for other forms
+                setFrequency(dosage?.form === 'INJ' ? 'once_weekly' : 'once_daily');
               }}
               style={{
                 width: '100%',
@@ -297,7 +301,7 @@ export default function DrugSearchStep({
             >
               {dosages.map(dosage => (
                 <option key={dosage.id} value={dosage.id}>
-                  {dosage.strength} {dosage.form}
+                  {dosage.strength}{dosage.strengthUOM}
                 </option>
               ))}
             </select>
@@ -312,7 +316,7 @@ export default function DrugSearchStep({
               fontFamily: body,
               marginBottom: 6
             }}>
-              Quantity per fill
+              How many per refill?
             </label>
             <input
               type="number"
@@ -564,7 +568,7 @@ export default function DrugSearchStep({
                   fontFamily: body,
                   marginTop: 2
                 }}>
-                  {drug.strength} {drug.form} - Qty: {drug.qty} - {drug.frequencyLabel || 'Once daily'}
+                  {drug.strength}{drug.strengthUOM} - Qty: {drug.qty} - {drug.frequencyLabel || 'Once daily'}
                 </div>
               </div>
               <button
