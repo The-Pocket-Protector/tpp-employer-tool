@@ -7,6 +7,7 @@ import CardCaptureStep from "./components/CardCaptureStep";
 import InsuranceCardCapture from "./components/InsuranceCardCapture";
 import EligibilityCheckStep from "./components/EligibilityCheckStep";
 import { extractInsuranceCard } from "./services/insurance-card.service";
+import { searchPayers } from "./services/payer.service";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
 const TEXT_DARK = "#1e293b", TEXT_MED = "#475569", TEXT_LIGHT = "#94a3b8", BORDER = "#e2e8f0";
@@ -113,24 +114,7 @@ function generateEmployerAnalysis(data) {
 }
 
 
-// ─── EMPLOYER PLANS DATABASE (swap for Steadi API later) ───
-const EMPLOYER_PLANS_DB = [
-  {id:"ep_1",planName:"Blue Choice PPO",carrier:"Blue Cross Blue Shield",employer:"Acme Corporation",premium:285,deductible:2000,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true},
-  {id:"ep_2",planName:"Aetna Open Access HMO",carrier:"Aetna",employer:"Globex Industries",premium:180,deductible:1500,oopMax:4000,copay:25,networkType:"HMO",rxCoverage:true},
-  {id:"ep_3",planName:"UHC Choice Plus PPO",carrier:"UnitedHealthcare",employer:"Initech LLC",premium:350,deductible:3000,oopMax:6500,copay:40,networkType:"PPO",rxCoverage:true},
-  {id:"ep_4",planName:"Cigna Connect EPO",carrier:"Cigna",employer:"Vandelay Industries",premium:220,deductible:1000,oopMax:4500,copay:20,networkType:"EPO",rxCoverage:true},
-  {id:"ep_5",planName:"Humana Gold Choice HDHP",carrier:"Humana",employer:"Sterling Cooper",premium:125,deductible:5000,oopMax:7000,copay:0,networkType:"HDHP",rxCoverage:true},
-  {id:"ep_6",planName:"Kaiser Permanente HMO",carrier:"Kaiser Permanente",employer:"Wayne Enterprises",premium:195,deductible:500,oopMax:3000,copay:15,networkType:"HMO",rxCoverage:true},
-  {id:"ep_7",planName:"Anthem Blue Cross PPO",carrier:"Anthem",employer:"Stark Industries",premium:310,deductible:2500,oopMax:6000,copay:35,networkType:"PPO",rxCoverage:true},
-  {id:"ep_8",planName:"BCBS Federal Employee Plan",carrier:"Blue Cross Blue Shield",employer:"Federal Government",premium:260,deductible:350,oopMax:7500,copay:25,networkType:"PPO",rxCoverage:true},
-  {id:"ep_9",planName:"Aetna HDHP with HSA",carrier:"Aetna",employer:"Dunder Mifflin",premium:95,deductible:4000,oopMax:6850,copay:0,networkType:"HDHP",rxCoverage:true},
-  {id:"ep_10",planName:"Cigna LocalPlus HMO",carrier:"Cigna",employer:"Pied Piper Inc",premium:155,deductible:750,oopMax:3500,copay:20,networkType:"HMO",rxCoverage:true},
-  {id:"ep_11",planName:"UHC Navigate EPO",carrier:"UnitedHealthcare",employer:"Hooli",premium:200,deductible:1500,oopMax:5000,copay:30,networkType:"EPO",rxCoverage:true},
-  {id:"ep_12",planName:"Humana PPO",carrier:"Humana",employer:"Los Pollos Hermanos",premium:275,deductible:2000,oopMax:5500,copay:35,networkType:"PPO",rxCoverage:true},
-  {id:"ep_13",planName:"Blue Shield PPO 80/20",carrier:"Blue Shield of California",employer:"Cyberdyne Systems",premium:340,deductible:1000,oopMax:6000,copay:30,networkType:"PPO",rxCoverage:true},
-  {id:"ep_14",planName:"GEHA Elevate Plus",carrier:"GEHA",employer:"Federal Government",premium:230,deductible:400,oopMax:5000,copay:20,networkType:"PPO",rxCoverage:true},
-  {id:"ep_15",planName:"Aetna Open Choice PPO",carrier:"Aetna",employer:"Umbrella Corporation",premium:295,deductible:2500,oopMax:5500,copay:30,networkType:"PPO",rxCoverage:true},
-];
+// ─── PAYER SEARCH (via Stedi Payer Search API) ───
 
 // ─── CARD EXTRACTION FUNCTION ───
 async function extractPlanFromCard(imageFile) {
@@ -145,18 +129,6 @@ async function extractPlanFromCard(imageFile) {
     carrier: cardData.carrierName,
     matched: true
   };
-}
-
-// TODO: Migrate to real service - see src/services/sunfire.service.js for patterns
-async function searchEmployerPlans(query) {
-  // STUB: Replace with real API call to search employer plans
-  // Real implementation should call sunfireApi or dedicated employer plans API
-  const q = query.toLowerCase();
-  return EMPLOYER_PLANS_DB.filter(p =>
-    p.planName.toLowerCase().includes(q) ||
-    p.carrier.toLowerCase().includes(q) ||
-    p.employer.toLowerCase().includes(q)
-  ).slice(0, 8);
 }
 
 // ─── DOCTOR DUMMY DATA ───
@@ -709,31 +681,32 @@ function TypeaheadSearch({ searchFn, renderResult, onSelect, placeholder, label 
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [isLoading, setIsLoading] = useState(false);
   const timerRef = useRef(null);
   const containerRef = useRef(null);
 
   const doSearch = (q) => {
-    if (q.length < 2) { setResults([]); setOpen(false); return; }
+    if (q.length < 2) { setResults([]); setOpen(false); setIsLoading(false); return; }
     if (timerRef.current) clearTimeout(timerRef.current);
+    setIsLoading(true);
     timerRef.current = setTimeout(async () => {
       const r = await searchFn(q);
       setResults(r);
       setOpen(true);
       setHighlighted(-1);
+      setIsLoading(false);
     }, 200);
   };
 
   const handleChange = (e) => { setQuery(e.target.value); doSearch(e.target.value); };
   const handleSelect = (item) => { onSelect(item); setQuery(""); setResults([]); setOpen(false); };
-  const handleManualAdd = () => { if (query.trim()) { onSelect({ _manual: true, name: query.trim() }); setQuery(""); setResults([]); setOpen(false); } };
   const handleKeyDown = (e) => {
     if (!open) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setHighlighted(h => Math.min(h + 1, results.length)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlighted(h => Math.min(h + 1, results.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHighlighted(h => Math.max(h - 1, 0)); }
     else if (e.key === "Enter") {
       e.preventDefault();
       if (highlighted >= 0 && highlighted < results.length) handleSelect(results[highlighted]);
-      else if (highlighted === results.length) handleManualAdd();
     }
     else if (e.key === "Escape") { setOpen(false); }
   };
@@ -749,26 +722,31 @@ function TypeaheadSearch({ searchFn, renderResult, onSelect, placeholder, label 
         placeholder={placeholder}
         style={{ width: "100%", padding: "14px 16px", border: `2px solid ${open ? GREEN : BORDER}`, borderRadius: 12, fontSize: 16, fontFamily: body, color: TEXT_DARK, outline: "none", transition: "border-color 0.15s" }}
       />
-      {open && (
+      {(open || isLoading) && query.length >= 2 && (
         <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, background: "#fff", border: `2px solid ${BORDER}`, borderRadius: 12, marginTop: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", maxHeight: 320, overflowY: "auto" }}>
-          {results.map((item, i) => (
-            <div key={i} onMouseDown={() => handleSelect(item)} style={{
-              padding: "12px 16px", cursor: "pointer", borderBottom: i < results.length - 1 ? `1px solid ${BORDER}` : "none",
-              background: highlighted === i ? GREEN_LIGHT : "#fff", borderLeft: highlighted === i ? `3px solid ${GREEN}` : "3px solid transparent",
-              minHeight: 44, display: "flex", alignItems: "center", transition: "background 0.1s"
-            }}>
-              {renderResult(item)}
+          {isLoading ? (
+            <div style={{ padding: "20px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+              <div style={{ width: 20, height: 20, border: `3px solid ${BORDER}`, borderTopColor: GREEN, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              <span style={{ fontSize: 14, color: TEXT_MED }}>Searching carriers...</span>
             </div>
-          ))}
-          {results.length === 0 && query.length >= 2 && (
-            <div onMouseDown={handleManualAdd} style={{
-              padding: "12px 16px", cursor: "pointer", background: highlighted === results.length ? GREEN_LIGHT : "#fff",
-              borderLeft: highlighted === results.length ? `3px solid ${GREEN}` : "3px solid transparent",
-              minHeight: 44, display: "flex", alignItems: "center", gap: 8
-            }}>
-              <span style={{ color: GREEN, fontSize: 16, fontWeight: 700 }}>+</span>
-              <div><div style={{ fontSize: 14, fontWeight: 500, color: TEXT_MED }}>No results found — add "{query}" manually</div></div>
-            </div>
+          ) : (
+            <>
+              {results.map((item, i) => (
+                <div key={i} onMouseDown={() => handleSelect(item)} style={{
+                  padding: "12px 16px", cursor: "pointer", borderBottom: i < results.length - 1 ? `1px solid ${BORDER}` : "none",
+                  background: highlighted === i ? GREEN_LIGHT : "#fff", borderLeft: highlighted === i ? `3px solid ${GREEN}` : "3px solid transparent",
+                  minHeight: 44, display: "flex", alignItems: "center", transition: "background 0.1s"
+                }}>
+                  {renderResult(item)}
+                </div>
+              ))}
+              {results.length === 0 && (
+                <div style={{ padding: "16px" }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: TEXT_DARK, marginBottom: 4 }}>No carriers found for "{query}"</div>
+                  <div style={{ fontSize: 13, color: TEXT_MED }}>Try a different spelling or check your state's carriers.</div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1081,6 +1059,12 @@ export default function EmployerCoverageTools() {
         }];
       } else if (zipData.state && zipData.zip) {
         counties = [{ code: '', fips: '', name: zipData.state || '' }];
+      }
+
+      // Extract and store the user's state for payer search filtering
+      const userState = zipData.state || counties[0]?.state || '';
+      if (userState) {
+        set("state", userState);
       }
 
       // Fetch radius zipcodes for MCP search
@@ -1533,18 +1517,18 @@ export default function EmployerCoverageTools() {
             </div>
 
             {/* Option 2: Plan search — standard card */}
-            <OptionCard title="Search for your employer and plan" desc="Type your employer name or insurance carrier and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
+            <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
 
             {/* Skip link */}
             <button onClick={()=>{setMatchedPlan(null);goTo(106)}} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>Skip — just give me the best general recommendation</button>
           </>) : (
             /* Search mode */
             <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={searchEmployerPlans} placeholder="Start typing employer or carrier name..." label="Search for your employer or plan name"
+              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
                 onSelect={(plan)=>{if(plan._manual){setPlanIdResult(null);setMatchedPlan(null);goTo(106);return;}setPlanIdResult(plan);setPlanIdMode(null)}}
-                renderResult={(p)=>(<div><div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.planName}</div><div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.carrier} · {p.employer}</div></div>)}
+                renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
               />
-              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Type your employer name or insurance carrier.</div>
+              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your carrier? Try typing more to narrow results.</div>
               <button onClick={()=>setPlanIdMode(null)} style={{display:"block",width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back to options</button>
             </div>
           )) : (
@@ -1786,7 +1770,7 @@ export default function EmployerCoverageTools() {
           </div>
 
           {/* Option 2: Plan search — standard */}
-          <OptionCard title="Search for your employer and plan" desc="Type your employer name or insurance carrier and we'll find your plan details." selected={false} onClick={()=>goTo(17)}/>
+          <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan details." selected={false} onClick={()=>goTo(17)}/>
 
           {/* Option 3: Manual entry — text link */}
           <button onClick={()=>goTo(2)} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>I already know my plan details — enter them manually</button>
@@ -1832,22 +1816,33 @@ export default function EmployerCoverageTools() {
         {/* STEP 17: PLAN SEARCH */}
         {step===17&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
           {sL("Find Your Plan")}
-          {sT("Search for your employer or insurance carrier.")}
-          {sS("Start typing and we'll find plans that match.")}
+          {sT("Search for your insurance carrier.")}
+          {sS("Start typing and we'll find carriers that match.")}
 
           <TypeaheadSearch
-            searchFn={searchEmployerPlans}
-            placeholder="Start typing employer or carrier name..."
-            label="Search employer plans"
+            searchFn={(q) => searchPayers(q, answers.state)}
+            placeholder="Start typing carrier name..."
+            label="Search for your insurance carrier"
             onSelect={(plan)=>{if(plan._manual){goTo(2);return;}setMatchedPlan(plan);goTo(18)}}
             renderResult={(p)=>(
-              <div>
-                <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.planName}</div>
-                <div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.carrier} · {p.employer}</div>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                {p.avatarUrl ? (
+                  <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/>
+                ) : (
+                  <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>
+                )}
+                <div>
+                  {p.highlightedName ? (
+                    <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} />
+                  ) : (
+                    <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>
+                  )}
+                  <div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div>
+                </div>
               </div>
             )}
           />
-          <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Search by employer name, carrier, or plan name.</div>
+          <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Search by carrier name (e.g., Blue Cross, Aetna, UnitedHealthcare).</div>
 
           {btnB(15)}
         </div>)}
@@ -2112,18 +2107,18 @@ export default function EmployerCoverageTools() {
             </div>
 
             {/* Option 2: Plan search — standard card */}
-            <OptionCard title="Search for your employer and plan" desc="Type your employer name or insurance carrier and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
+            <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
 
             {/* Skip link */}
             <button onClick={()=>{setMatchedPlan(null);goTo(204)}} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>Skip — just give me the best general recommendation</button>
           </>) : (
             /* Search mode */
             <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={searchEmployerPlans} placeholder="Start typing employer or carrier name..." label="Search for your employer or plan name"
+              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
                 onSelect={(plan)=>{if(plan._manual){setPlanIdResult(null);setMatchedPlan(null);goTo(204);return;}setPlanIdResult(plan);setPlanIdMode(null)}}
-                renderResult={(p)=>(<div><div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.planName}</div><div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.carrier} · {p.employer}</div></div>)}
+                renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
               />
-              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Type your employer name or insurance carrier.</div>
+              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your carrier? Try typing more to narrow results.</div>
               <button onClick={()=>setPlanIdMode(null)} style={{display:"block",width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back to options</button>
             </div>
           )) : (
@@ -2170,18 +2165,18 @@ export default function EmployerCoverageTools() {
             </div>
 
             {/* Option 2: Plan search — standard card */}
-            <OptionCard title="Search for your employer and plan" desc="Type your former employer's name or insurance carrier and we'll find your plan." selected={false} onClick={()=>setPlanIdMode("search")}/>
+            <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan." selected={false} onClick={()=>setPlanIdMode("search")}/>
 
             {/* Option 3: Manual entry — text link */}
             <button onClick={()=>goTo(1010)} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>I'll enter my plan details manually</button>
           </>) : (
             /* Search mode */
             <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={searchEmployerPlans} placeholder="Start typing employer or carrier name..." label="Search for your employer or plan name"
+              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
                 onSelect={(plan)=>{if(plan._manual){goTo(1010);return;}setCobraPlanId(plan);setPlanIdMode(null)}}
-                renderResult={(p)=>(<div><div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.planName}</div><div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.carrier} · {p.employer}</div></div>)}
+                renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
               />
-              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Type your former employer's name or insurance carrier.</div>
+              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your carrier? Try typing more to narrow results.</div>
               <button onClick={()=>setPlanIdMode(null)} style={{display:"block",width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back to options</button>
             </div>
           )) : (
