@@ -262,7 +262,7 @@ export default function DrugSearchStep({
             fontFamily: heading,
             marginBottom: 16
           }}>
-            Configure: {pendingDrug.name}
+            {pendingDrug.name}
           </div>
 
           {/* Dosage selection */}
