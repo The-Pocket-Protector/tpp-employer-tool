@@ -7,7 +7,7 @@ import axios from 'axios';
 
 // API endpoints configuration
 const API_BASE_URL = import.meta.env.VITE_SUNFIRE_API_URL || 'https://api-dot-tpp-staging-476110.uc.r.appspot.com/api';
-const RAILWAY_API_BASE = 'https://tpp-backend-production.up.railway.app/api';
+const RAILWAY_API_BASE = import.meta.env.VITE_RAILWAY_API_URL || 'https://tpp-backend-production.up.railway.app/api';
 const SECOND_IN_MILLISECONDS = 1000;
 const MINUTE_IN_MILLISECONDS = 60 * SECOND_IN_MILLISECONDS;
 const AXIOS_TIMEOUT = MINUTE_IN_MILLISECONDS * 10;
