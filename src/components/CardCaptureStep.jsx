@@ -34,6 +34,7 @@ import {
  * @param {boolean} props.cardExtractFailed - Whether extraction failed
  * @param {function} props.setCardExtractFailed - Function to update failed state
  * @param {function} props.onReset - Function to reset the entire flow
+ * @param {function} props.onSearchForPlan - Callback when user wants to search for their plan instead of scanning
  */
 export default function CardCaptureStep({
   currentStep,
@@ -47,9 +48,23 @@ export default function CardCaptureStep({
   setCardExtracting,
   cardExtractFailed: _cardExtractFailed,
   setCardExtractFailed,
-  onReset
+  onReset,
+  onSearchForPlan
 }) {
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
+
+  // Check if extracted Medicare card data has meaningful information
+  const isMedicareDataValid = (data) => {
+    if (!data) return false;
+    // Check for Medicare number
+    const hasMedicareNumber = data.medicare_number && data.medicare_number.trim() !== '';
+    // Check for name
+    const hasName = (data.fullName && data.fullName.trim() !== '') ||
+                    (data.firstName && data.firstName.trim() !== '') ||
+                    (data.lastName && data.lastName.trim() !== '');
+    // Need at least Medicare number to proceed
+    return hasMedicareNumber || hasName;
+  };
 
   // Handle capture and extraction
   const handleCaptureComplete = useCallback(async (file, previewUrl) => {
@@ -63,6 +78,15 @@ export default function CardCaptureStep({
 
     try {
       const data = await extractMedicareCard(file);
+
+      // Validate that we got meaningful data
+      if (!isMedicareDataValid(data)) {
+        setCardExtracting(false);
+        setCardExtractFailed(true);
+        goToStep(335); // Failure
+        return;
+      }
+
       setCardExtract(data);
       setCardExtracting(false);
       goToStep(334); // Success
@@ -171,7 +195,47 @@ export default function CardCaptureStep({
             cursor: 'pointer'
           }}
         >
-          Open Camera
+          Scan My Card
+        </button>
+
+        {onSearchForPlan && (
+          <button
+            onClick={onSearchForPlan}
+            style={{
+              width: '100%',
+              marginTop: 12,
+              background: 'none',
+              border: `2px solid ${GREEN}`,
+              color: GREEN,
+              padding: '14px 28px',
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 600,
+              fontFamily: heading,
+              cursor: 'pointer'
+            }}
+          >
+            Search for My Plan
+          </button>
+        )}
+
+        <button
+          onClick={() => goToStep(336)}
+          style={{
+            width: '100%',
+            marginTop: 12,
+            background: 'none',
+            border: `2px solid ${BORDER}`,
+            color: TEXT_MED,
+            padding: '14px 28px',
+            borderRadius: 12,
+            fontSize: 15,
+            fontWeight: 600,
+            fontFamily: heading,
+            cursor: 'pointer'
+          }}
+        >
+          Enter Information Manually
         </button>
       </div>
     );
@@ -598,6 +662,27 @@ export default function CardCaptureStep({
         >
           Open Camera to Scan Card
         </button>
+
+        {onSearchForPlan && (
+          <button
+            onClick={onSearchForPlan}
+            style={{
+              width: '100%',
+              marginTop: 12,
+              background: 'none',
+              border: `2px solid ${GREEN}`,
+              color: GREEN,
+              padding: '14px 28px',
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 600,
+              fontFamily: heading,
+              cursor: 'pointer'
+            }}
+          >
+            Search for My Plan
+          </button>
+        )}
 
         <button
           onClick={() => goToStep(336)}

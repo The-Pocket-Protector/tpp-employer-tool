@@ -938,6 +938,7 @@ export default function EmployerCoverageTools() {
   const [cardUploading, setCardUploading] = useState(false);
   const [cardImage, setCardImage] = useState(null);
   const [isExtractingCard, setIsExtractingCard] = useState(false); // shows loader after camera capture
+  const [cardExtractionFailed, setCardExtractionFailed] = useState(false); // shows failure UI when extraction fails
   const [extractionStatus, setExtractionStatus] = useState(0); // cycles through status messages
   const [spouseData, setSpouseData] = useState({knowsDetails:"",spouseAlso65:""});
   const [retireeData, setRetireeData] = useState({cost:"",satisfaction:""});
@@ -952,6 +953,9 @@ export default function EmployerCoverageTools() {
   const [guidePrefs, setGuidePrefs] = useState(new Set());
   const [guideMatch, setGuideMatch] = useState(null);
   const [recSource, setRecSource] = useState(0); // which step the rec came from
+
+  // Payer search state for "similar coverage" flow
+  const [selectedPayer, setSelectedPayer] = useState(null);
 
   // Sunfire backend integration state
   const [county, setCounty] = useState('');
@@ -969,7 +973,7 @@ export default function EmployerCoverageTools() {
     setStep(s);
   };
   const autoAdvance = (n) => { if(autoTimer.current)clearTimeout(autoTimer.current); autoTimer.current=setTimeout(()=>goTo(n),350); };
-  const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setRadiusZipcodes(''); setAvailableCounties([]); setSunfireSession(null); setIsLoadingZip(false); setZipError(null); goTo(0); };
+  const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setRadiusZipcodes(''); setAvailableCounties([]); setSunfireSession(null); setIsLoadingZip(false); setZipError(null); setSelectedPayer(null); goTo(0); };
 
   // Extraction status cycling messages
   const extractionMessages = [
@@ -1002,7 +1006,9 @@ export default function EmployerCoverageTools() {
           medicaid_payload: {},
           allow_dsnp: false,
           allow_csnp: false,
-          ...(answers.preference === "cheaper" && { is_ma_only: true })
+          ...(answers.preference === "cheaper" && { is_ma_only: true }),
+          // TODO: Replace with dedicated employer-plan matching endpoint when available
+          ...(selectedPayer && { payer_id: selectedPayer.payerId || selectedPayer.id })
         });
         setRecommendationData(result);
       } catch (err) {
@@ -1012,7 +1018,7 @@ export default function EmployerCoverageTools() {
       goTo(1052);
     };
     fetchRecs();
-  }, [step, sunfireSession?.customerCode, answers.preference]);
+  }, [step, sunfireSession?.customerCode, answers.preference, selectedPayer]);
 
   // Branch detection
   const isSmall = answers.empSize === "small";
@@ -1030,9 +1036,9 @@ export default function EmployerCoverageTools() {
   let pSteps = A_STEPS, pIdx = 0;
   if (answers.status === "spouse" && step >= 60 && step <= 64) { pSteps = SP_STEPS; pIdx = ({60:0,61:1,62:1,63:2,64:2})[step] ?? 0; }
   else if (answers.status === "retiree" && step >= 50 && step <= 541) { pSteps = R_STEPS; pIdx = ({50:0,51:1,52:1,53:2,54:2,541:2})[step] ?? 0; }
-  else if (isSmall) { pSteps = A_STEPS; pIdx = ({0:0,100:1,101:2,102:3,103:4,104:5,105:6,1055:7,106:7})[step]??0; }
+  else if (isSmall) { pSteps = A_STEPS; pIdx = ({0:0,100:1,101:2,102:3,103:4,104:5,105:6,1051:7,1052:7,1055:7,10506:7,106:7})[step]??0; }
   else if (isCobra) { pSteps = C_STEPS; pIdx = ({0:0,1:1,10:2,1010:2,11:2,12:3,13:4,14:5})[step]??0; }
-  else if (step >= 200) { pSteps = B_CONT; pIdx = ({200:3,201:4,202:5,203:6,2035:7,204:7})[step]??2; }
+  else if (step >= 200) { pSteps = B_CONT; pIdx = ({200:3,201:4,202:5,203:6,1051:7,1052:7,2035:7,10506:7,204:7})[step]??2; }
   else { pSteps = B_STEPS; pIdx = ({0:0,1:1,15:2,16:2,17:2,18:2,2:2,3:2,4:2,5:3,6:4,7:5})[step]??0; }
 
   // Handlers
@@ -1496,8 +1502,8 @@ export default function EmployerCoverageTools() {
                 <div style={{fontSize:12,color:TEXT_MED,marginTop:3,lineHeight:1.5}}>You'd get the broadest coverage Medicare offers. See any doctor, almost nothing out of pocket when you need care. Very few surprises — your costs are predictable every month.</div>
               </div>
             </div>
-            {/* Option 3: Match current coverage → Medigap */}
-            <div onClick={()=>{set("preference","similar");handleMedRec("similar")}} style={{border:`2px solid ${answers.preference==="similar"?GREEN:BORDER}`,borderRadius:12,padding:"16px 18px",cursor:"pointer",background:answers.preference==="similar"?GREEN_LIGHT:"#fff",transition:"all 0.15s",display:"flex",gap:14,alignItems:"flex-start"}}>
+            {/* Option 3: Match current coverage → Camera/search screen */}
+            <div onClick={()=>{set("preference","similar");goTo(1055)}} style={{border:`2px solid ${answers.preference==="similar"?GREEN:BORDER}`,borderRadius:12,padding:"16px 18px",cursor:"pointer",background:answers.preference==="similar"?GREEN_LIGHT:"#fff",transition:"all 0.15s",display:"flex",gap:14,alignItems:"flex-start"}}>
               <div style={{width:36,height:36,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:answers.preference==="similar"?GREEN:TEXT_MED}}>{ICON_MATCH}</div>
               <div>
                 <div style={{fontSize:14,fontWeight:600,color:TEXT_DARK,fontFamily:heading}}>I want coverage that works like what I already have</div>
@@ -1602,6 +1608,13 @@ export default function EmployerCoverageTools() {
               </div>
             )}
 
+            {/* Payer Search Button - for "similar" preference */}
+            {answers.preference === "similar" && (
+              <button onClick={() => goTo(10506)} style={{width:"100%",padding:"14px 20px",marginBottom:16,background:"#fff",border:`2px solid ${BORDER}`,borderRadius:12,fontSize:14,fontWeight:600,color:TEXT_DARK,fontFamily:heading,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                <span style={{fontSize:18}}>🔍</span> Search for your employer and plan
+              </button>
+            )}
+
             <button onClick={() => goTo(340)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
               Verify Your Eligibility →
             </button>
@@ -1613,10 +1626,12 @@ export default function EmployerCoverageTools() {
         );})()}
 
         {step===1055&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
-          {sL("One More Thing")}
-          {sT("Tell us about your current employer plan so we can match it.")}
+          {sL(cardExtractionFailed === 1055 ? "Let's Try Again" : "One More Thing")}
+          {sT(cardExtractionFailed === 1055 ? "We couldn't read your card." : "Tell us about your current employer plan so we can match it.")}
           {sS(
-            doctors.length===0 && prescriptions.length===0
+            cardExtractionFailed === 1055
+              ? "Please try again with better lighting, or use one of the options below."
+              : doctors.length===0 && prescriptions.length===0
               ? "Since you didn't add doctors or medications, we'll use your employer plan details to find a Medicare plan with a similar network and drug coverage."
               : doctors.length===0
               ? "Since you didn't add your doctors, we'll use your employer plan details to find a Medicare plan with a similar provider network."
@@ -1625,34 +1640,26 @@ export default function EmployerCoverageTools() {
               : "You said you want coverage that works like what you already have. Tell us about your current plan so we can match it as closely as possible."
           )}
 
-          {!planIdResult ? (planIdMode!=="search" ? (<>
+          {!planIdResult ? (<>
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>setShowInsuranceCamera(1055)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>{setCardExtractionFailed(false);setShowInsuranceCamera(1055)}} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
-                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>Take a photo of your insurance card</div>
-                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>Fastest way — we'll identify your plan automatically.</div>
+                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>{cardExtractionFailed === 1055 ? "Try scanning again" : "Take a photo of your insurance card"}</div>
+                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>{cardExtractionFailed === 1055 ? "Make sure your card is well-lit and fully visible." : "Fastest way — we'll identify your plan automatically."}</div>
                 </div>
               </div>
             </div>
 
-            {/* Option 2: Plan search — standard card */}
-            <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
+            {/* Option 2: Search for plan — only show on card scan failure */}
+            {cardExtractionFailed === 1055 && (
+              <OptionCard title="Search for my plan" desc="Look up your employer or insurance carrier to find your plan." selected={false} onClick={()=>goTo(10506)}/>
+            )}
 
-            {/* Skip link */}
-            <button onClick={()=>{setMatchedPlan(null);goTo(106)}} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>Skip — just give me the best general recommendation</button>
+            {/* Option 3: Skip to recommendation */}
+            <OptionCard title="Just give me the best recommendation" desc="We'll find you the best Medicare plan based on your preferences." selected={false} onClick={()=>{setMatchedPlan(null);handleMedRec("similar")}}/>
           </>) : (
-            /* Search mode */
-            <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
-                onSelect={(plan)=>{if(plan._manual){setPlanIdResult(null);setMatchedPlan(null);goTo(106);return;}setPlanIdResult(plan);setPlanIdMode(null)}}
-                renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
-              />
-              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your carrier? Try typing more to narrow results.</div>
-              <button onClick={()=>setPlanIdMode(null)} style={{display:"block",width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back to options</button>
-            </div>
-          )) : (
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
               <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
@@ -1666,6 +1673,67 @@ export default function EmployerCoverageTools() {
           )}
 
           {btnB(105)}
+        </div>)}
+
+        {/* ═══ STEP 10506: PAYER SEARCH SCREEN ═══ */}
+        {step===10506&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
+          {sL("Refine Your Recommendation")}
+          {sT("Search for your employer's insurance")}
+          {sS("Finding your specific employer plan helps us give you a more accurate recommendation.")}
+
+          {!selectedPayer ? (
+            <>
+              <TypeaheadSearch
+                searchFn={(q) => searchPayers(q, answers.state)}
+                placeholder="Start typing your employer or carrier name..."
+                label="Search for your employer's insurance"
+                onSelect={(payer) => {
+                  if (payer._manual) {
+                    goTo(1052);
+                    return;
+                  }
+                  setSelectedPayer(payer);
+                }}
+                renderResult={(p) => (
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    {p.avatarUrl ? (
+                      <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/>
+                    ) : (
+                      <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>
+                        {(p.names?.[0] || p.planName || "?").charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      {p.highlightedName ? (
+                        <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} />
+                      ) : (
+                        <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>
+                      )}
+                      <div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>
+                        {p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              />
+              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your employer? Try typing the insurance carrier name instead.</div>
+            </>
+          ) : (
+            /* Inline confirmation */
+            <div style={{animation:"fadeUp 0.3s ease"}}>
+              <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",padding:"3px 10px",borderRadius:100,background:GREEN_BORDER,color:GREEN,display:"inline-block",marginBottom:10}}>✓ Plan identified</div>
+                <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{selectedPayer.names?.[0] || selectedPayer.planName}</div>
+                {selectedPayer.carrierName && <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>{selectedPayer.carrierName}</div>}
+              </div>
+              <button onClick={()=>goTo(1051)} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — continue →</button>
+              <button onClick={()=>setSelectedPayer(null)} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>That's not my plan — try again</button>
+            </div>
+          )}
+
+          <button onClick={() => goTo(1052)} style={{width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>
+            ← Back to recommendation
+          </button>
         </div>)}
 
                         {step===106&&medRec&&<RecScreen rec={medRec} backStep={105}/>}
@@ -2189,8 +2257,8 @@ export default function EmployerCoverageTools() {
                 <div style={{fontSize:12,color:TEXT_MED,marginTop:3,lineHeight:1.5}}>You'd get the broadest coverage Medicare offers. See any doctor, almost nothing out of pocket when you need care. Very few surprises — your costs are predictable every month.</div>
               </div>
             </div>
-            {/* Option 3: Match current coverage → Medigap */}
-            <div onClick={()=>{set("preference","similar");handleMedRec("similar")}} style={{border:`2px solid ${answers.preference==="similar"?GREEN:BORDER}`,borderRadius:12,padding:"16px 18px",cursor:"pointer",background:answers.preference==="similar"?GREEN_LIGHT:"#fff",transition:"all 0.15s",display:"flex",gap:14,alignItems:"flex-start"}}>
+            {/* Option 3: Match current coverage → Camera/search screen */}
+            <div onClick={()=>{set("preference","similar");goTo(2035)}} style={{border:`2px solid ${answers.preference==="similar"?GREEN:BORDER}`,borderRadius:12,padding:"16px 18px",cursor:"pointer",background:answers.preference==="similar"?GREEN_LIGHT:"#fff",transition:"all 0.15s",display:"flex",gap:14,alignItems:"flex-start"}}>
               <div style={{width:36,height:36,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:answers.preference==="similar"?GREEN:TEXT_MED}}>{ICON_MATCH}</div>
               <div>
                 <div style={{fontSize:14,fontWeight:600,color:TEXT_DARK,fontFamily:heading}}>I want coverage that works like what I already have</div>
@@ -2200,7 +2268,6 @@ export default function EmployerCoverageTools() {
           </div>
           {btnB(202)}
         </div>)}
-
 
         {step===2035&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
           {sL("One More Thing")}
@@ -2215,34 +2282,33 @@ export default function EmployerCoverageTools() {
               : "You said you want coverage that works like what you already have. Tell us about your current plan so we can match it as closely as possible."
           )}
 
-          {!planIdResult ? (planIdMode!=="search" ? (<>
+          {!planIdResult ? (<>
+            {/* Card extraction failure message */}
+            {cardExtractionFailed === 2035 && (
+              <div style={{background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:12,padding:16,marginBottom:16}}>
+                <div style={{fontFamily:heading,fontWeight:700,fontSize:14,color:"#991b1b",marginBottom:4}}>We couldn't read your card</div>
+                <div style={{fontSize:13,color:"#991b1b",lineHeight:1.6}}>Please try again with better lighting, or use one of the options below.</div>
+              </div>
+            )}
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>setShowInsuranceCamera(2035)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>{setCardExtractionFailed(false);setShowInsuranceCamera(2035)}} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
-                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>Take a photo of your insurance card</div>
-                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>Fastest way — we'll identify your plan automatically.</div>
+                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>{cardExtractionFailed === 2035 ? "Try scanning again" : "Take a photo of your insurance card"}</div>
+                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>{cardExtractionFailed === 2035 ? "Make sure your card is well-lit and fully visible." : "Fastest way — we'll identify your plan automatically."}</div>
                 </div>
               </div>
             </div>
 
-            {/* Option 2: Plan search — standard card */}
-            <OptionCard title="Search for your insurance carrier" desc="Type your insurance carrier name and we'll find your plan details." selected={false} onClick={()=>setPlanIdMode("search")}/>
+            {/* Option 2: Search for plan — only show on card scan failure */}
+            {cardExtractionFailed === 2035 && (
+              <OptionCard title="Search for my plan" desc="Look up your employer or insurance carrier to find your plan." selected={false} onClick={()=>goTo(10506)}/>
+            )}
 
-            {/* Skip link */}
-            <button onClick={()=>{setMatchedPlan(null);goTo(204)}} style={{display:"block",width:"100%",marginTop:24,background:"none",border:"none",color:TEXT_LIGHT,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textDecoration:"underline"}}>Skip — just give me the best general recommendation</button>
+            {/* Option 3: Skip to recommendation */}
+            <OptionCard title="Just give me the best recommendation" desc="We'll find you the best Medicare plan based on your preferences." selected={false} onClick={()=>{setMatchedPlan(null);handleMedRec("similar")}}/>
           </>) : (
-            /* Search mode */
-            <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
-                onSelect={(plan)=>{if(plan._manual){setPlanIdResult(null);setMatchedPlan(null);goTo(204);return;}setPlanIdResult(plan);setPlanIdMode(null)}}
-                renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
-              />
-              <div style={{fontSize:12,color:TEXT_LIGHT,marginTop:6}}>Don't see your carrier? Try typing more to narrow results.</div>
-              <button onClick={()=>setPlanIdMode(null)} style={{display:"block",width:"100%",marginTop:16,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>← Back to options</button>
-            </div>
-          )) : (
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
               <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:14,padding:18,background:"#fff",marginBottom:16}}>
@@ -2274,13 +2340,20 @@ export default function EmployerCoverageTools() {
           <div style={{background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:12,padding:16,marginBottom:24}}><div style={{fontFamily:heading,fontWeight:700,fontSize:14,color:"#991b1b",marginBottom:4}}>⚠️ COBRA isn't employer coverage for Medicare</div><div style={{fontSize:13,color:"#991b1b",lineHeight:1.6}}>If you're 65+ on COBRA without Part B, you may be accruing a permanent penalty.</div></div>
 
           {!cobraPlanId ? (planIdMode!=="search" ? (<>
+            {/* Card extraction failure message */}
+            {cardExtractionFailed === 10 && (
+              <div style={{background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:12,padding:16,marginBottom:16}}>
+                <div style={{fontFamily:heading,fontWeight:700,fontSize:14,color:"#991b1b",marginBottom:4}}>We couldn't read your card</div>
+                <div style={{fontSize:13,color:"#991b1b",lineHeight:1.6}}>Please try again with better lighting, or use one of the options below.</div>
+              </div>
+            )}
             {/* Option 1: Card scan — featured */}
-            <div onClick={()=>setShowInsuranceCamera(10)} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
+            <div onClick={()=>{setCardExtractionFailed(false);setShowInsuranceCamera(10)}} style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,cursor:"pointer",marginBottom:14,transition:"all 0.15s"}}>
               <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                 <div style={{fontSize:28,lineHeight:1}}>📷</div>
                 <div>
-                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>Take a photo of your insurance card</div>
-                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>We'll identify your plan, carrier, and costs automatically — fastest option.</div>
+                  <div style={{fontFamily:heading,fontSize:16,fontWeight:700,color:TEXT_DARK,marginBottom:4}}>{cardExtractionFailed === 10 ? "Try scanning again" : "Take a photo of your insurance card"}</div>
+                  <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.6}}>{cardExtractionFailed === 10 ? "Make sure your card is well-lit and fully visible." : "We'll identify your plan, carrier, and costs automatically — fastest option."}</div>
                 </div>
               </div>
             </div>
@@ -2996,6 +3069,8 @@ export default function EmployerCoverageTools() {
             customerCode={sunfireSession?.customerCode}
             onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(349)}}
             onReset={()=>goTo(0)}
+            onSearchForPlan={()=>goTo(17)}
+            onManualEntry={()=>goTo(2)}
           />
         )}
 
@@ -3045,6 +3120,7 @@ export default function EmployerCoverageTools() {
             const captureStep = showInsuranceCamera;
             setShowInsuranceCamera(null);
             setIsExtractingCard(true);
+            setCardExtractionFailed(false);
             try {
               const plan = await extractPlanFromCard(file);
               if (captureStep === 10) {
@@ -3052,6 +3128,9 @@ export default function EmployerCoverageTools() {
               } else {
                 setPlanIdResult(plan);
               }
+            } catch (err) {
+              console.error('Card extraction failed:', err);
+              setCardExtractionFailed(captureStep); // Store which step triggered the failure
             } finally {
               setIsExtractingCard(false);
             }
