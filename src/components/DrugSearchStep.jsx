@@ -321,7 +321,22 @@ export default function DrugSearchStep({
             <input
               type="number"
               value={quantity}
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 30)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '') {
+                  setQuantity('');
+                } else {
+                  const num = parseInt(val);
+                  if (!isNaN(num) && num >= 0) {
+                    setQuantity(num);
+                  }
+                }
+              }}
+              onBlur={() => {
+                if (quantity === '' || quantity < 1) {
+                  setQuantity(30);
+                }
+              }}
               min={1}
               max={999}
               style={{

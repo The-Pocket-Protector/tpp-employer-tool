@@ -45,7 +45,7 @@ const MOCK_DRUG_DOSAGES = {
   "1002": { drugDosage: { dosages: [{ id: 10021, name: "10mg", qty: 30, frequency: 1 }, { id: 10022, name: "20mg", qty: 30, frequency: 1 }, { id: 10023, name: "40mg", qty: 30, frequency: 1 }] } },
   "1003": { drugDosage: { dosages: [{ id: 10031, name: "500mg", qty: 60, frequency: 2 }, { id: 10032, name: "850mg", qty: 60, frequency: 2 }, { id: 10033, name: "1000mg", qty: 60, frequency: 2 }] } },
   "1011": { drugDosage: { dosages: [{ id: 10111, name: "2.5mg", qty: 60, frequency: 2 }, { id: 10112, name: "5mg", qty: 60, frequency: 2 }] } },
-  "1015": { drugDosage: { dosages: [{ id: 10151, name: "0.25mg", qty: 4, frequency: 1 }, { id: 10152, name: "0.5mg", qty: 4, frequency: 1 }, { id: 10153, name: "1mg", qty: 4, frequency: 1 }] } },
+  "1015": { drugDosage: { dosages: [{ id: 10151, name: "0.25mg", qty: 4, frequency: 1 }, { id: 10152, name: "0.5mg", qty: 4, frequency: 1 }, { id: 10153, name: "1mg", qty: 4, frequency: 1 }, { id: 10154, name: "2mg", qty: 4, frequency: 1 }] } },
 };
 
 const MOCK_ZIP_DATA = {
