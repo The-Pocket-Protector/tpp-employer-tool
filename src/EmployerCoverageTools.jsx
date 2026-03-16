@@ -1652,13 +1652,11 @@ export default function EmployerCoverageTools() {
               </div>
             </div>
 
-            {/* Option 2: Search for plan — only show on card scan failure */}
-            {cardExtractionFailed === 1055 && (
-              <OptionCard title="Search for my plan" desc="Look up your employer or insurance carrier to find your plan." selected={false} onClick={()=>goTo(10506)}/>
-            )}
-
-            {/* Option 3: Skip to recommendation */}
-            <OptionCard title="Just give me the best recommendation" desc="We'll find you the best Medicare plan based on your preferences." selected={false} onClick={()=>{setMatchedPlan(null);handleMedRec("similar")}}/>
+            {/* Options 2 & 3: Side by side */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <OptionCard title="Search for my plan" desc="Look up your employer or insurance carrier." selected={false} onClick={()=>goTo(10506)}/>
+              <OptionCard title="Just give me a recommendation" desc="We'll find the best Medicare plan for you." selected={false} onClick={()=>{setMatchedPlan(null);handleMedRec("similar")}}/>
+            </div>
           </>) : (
             /* Inline confirmation */
             <div style={{animation:"fadeUp 0.3s ease"}}>
