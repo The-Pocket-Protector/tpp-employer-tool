@@ -1459,6 +1459,7 @@ export default function EmployerCoverageTools() {
           {sS("Adding your doctors helps us check which Medicare plans include them. You can skip this and add them later.")}
           <DoctorSearchStep
             zipCode={radiusZipcodes || answers.zip}
+            state={zipToState(answers.zip)}
             county={countyName}
             selectedDoctors={doctors}
             onComplete={(selectedDoctors) => handleDoctorComplete(selectedDoctors, 104)}

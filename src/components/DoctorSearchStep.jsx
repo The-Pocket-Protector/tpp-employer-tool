@@ -1,10 +1,10 @@
 /**
  * DoctorSearchStep - Simple form-based doctor search with autocomplete
- * Loads providers for the zipcode and shows suggestions as user types
+ * Uses NPI Registry for both name and specialty search
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { searchProviders } from '../services/sunfire.service';
+import { searchProviders } from '../services/npi.service';
 import {
   GREEN,
   GREEN_LIGHT,
@@ -19,12 +19,13 @@ import {
 /**
  * @param {Object} props
  * @param {string} props.zipCode - User's ZIP code (or comma-separated radius zipcodes)
+ * @param {string} props.state - User's 2-letter state code (e.g., "NY")
  * @param {string} props.county - User's county name
  * @param {Array} props.selectedDoctors - Already selected doctors
  * @param {function} props.onComplete - Callback with selected doctors array
  * @param {function} props.onBack - Callback to go back
  */
-export default function DoctorSearchStep({ zipCode, county, selectedDoctors = [], onComplete, onBack }) {
+export default function DoctorSearchStep({ zipCode, state, county, selectedDoctors = [], onComplete, onBack }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -37,7 +38,7 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
   const suggestionsRef = useRef(null);
   const searchTimeoutRef = useRef(null);
 
-  // Get primary zip code (first one if comma-separated)
+  // Get primary ZIP code (first one if comma-separated)
   const primaryZip = zipCode?.split(',')[0]?.trim() || zipCode;
 
   // Search providers when query changes (debounced)
@@ -49,19 +50,19 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
     if (searchQuery.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
+      setIsSearching(false);
       return;
     }
 
+    // Set searching immediately to prevent "no results" flash during debounce
+    setIsSearching(true);
+
     searchTimeoutRef.current = setTimeout(async () => {
-      setIsSearching(true);
       setError(null);
 
       try {
-        const results = await searchProviders({
-          provider_name: searchQuery,
-          zip_code: primaryZip,
-          max_size: 20
-        });
+        // Search by name first, then specialty - uses exact ZIP code
+        const results = await searchProviders(searchQuery, state, primaryZip);
 
         // Filter out already selected providers
         const selectedIds = new Set(selected.map(d => d.id));
@@ -77,14 +78,14 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
       } finally {
         setIsSearching(false);
       }
-    }, 300);
+    }, 500);
 
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, primaryZip, selected]);
+  }, [searchQuery, state, primaryZip, selected]);
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -139,6 +140,14 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
     return provider.specialties || provider.specialty || '';
   };
 
+  // Get city/state display
+  const getCityState = (provider) => {
+    if (provider.city && provider.state) {
+      return `${provider.city}, ${provider.state}`;
+    }
+    return '';
+  };
+
   // Select a provider
   const handleSelectProvider = (provider) => {
     const newDoctor = {
@@ -147,6 +156,8 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
       npi: provider.npi || provider.id,
       specialties: getSpecialty(provider),
       address: formatAddress(provider),
+      city: provider.city,
+      state: provider.state,
       phone: provider.phone || ''
     };
 
@@ -167,6 +178,7 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
   const formatAddress = (provider) => {
     const parts = [];
     if (provider.address1) parts.push(provider.address1);
+    if (provider.address) parts.push(provider.address);
     if (provider.city) parts.push(provider.city);
     if (provider.state) parts.push(provider.state);
     if (provider.zip) parts.push(provider.zip);
@@ -183,8 +195,13 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
     onComplete([]);
   };
 
+  // Check if we should show "no results" state
+  const showNoResults = suggestions.length === 0 &&
+    searchQuery.length >= 2 &&
+    !isSearching;
+
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', maxWidth: '100%' }}>
       {/* Search input */}
       <div style={{ position: 'relative', marginBottom: 16 }}>
         <input
@@ -194,7 +211,7 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
           onChange={(e) => setSearchQuery(e.target.value)}
           onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Start typing doctor's name..."
+          placeholder="Search by name or specialty..."
           style={{
             width: '100%',
             boxSizing: 'border-box',
@@ -236,7 +253,7 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
               top: '100%',
               left: 0,
               right: 0,
-              maxHeight: 280,
+              maxHeight: 400,
               overflowY: 'auto',
               background: '#fff',
               border: `1px solid ${BORDER}`,
@@ -283,13 +300,33 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
                   color: TEXT_MED,
                   fontFamily: body
                 }}>
-                  {formatAddress(provider)}
+                  {getCityState(provider) || formatAddress(provider)}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* No results message */}
+      {showNoResults && (
+        <div style={{
+          padding: '16px',
+          background: GREEN_LIGHT,
+          borderRadius: 10,
+          marginBottom: 16,
+          textAlign: 'center'
+        }}>
+          <p style={{
+            fontSize: 14,
+            color: TEXT_DARK,
+            fontFamily: body,
+            margin: 0
+          }}>
+            No providers found. Try a different name or specialty.
+          </p>
+        </div>
+      )}
 
       {/* Error message */}
       {error && (
@@ -351,7 +388,16 @@ export default function DoctorSearchStep({ zipCode, county, selectedDoctors = []
                     {doctor.specialties}
                   </div>
                 )}
-                {doctor.address && (
+                {(doctor.city && doctor.state) ? (
+                  <div style={{
+                    fontSize: 12,
+                    color: TEXT_MED,
+                    fontFamily: body,
+                    marginTop: 2
+                  }}>
+                    {doctor.city}, {doctor.state}
+                  </div>
+                ) : doctor.address && (
                   <div style={{
                     fontSize: 12,
                     color: TEXT_MED,
