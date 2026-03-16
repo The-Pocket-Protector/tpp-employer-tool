@@ -34,6 +34,8 @@ import {
  * @param {function} props.setEligibilityResult - Function to update eligibility result
  * @param {function} props.onComplete - Callback when flow is complete
  * @param {function} props.onReset - Function to reset the entire flow
+ * @param {function} props.onSearchForPlan - Callback when user wants to search for their plan instead of scanning
+ * @param {function} props.onManualEntry - Callback when user wants to manually enter plan info
  */
 export default function EligibilityCheckStep({
   currentStep,
@@ -44,11 +46,26 @@ export default function EligibilityCheckStep({
   setEligibilityResult,
   // zipCode and county are passed but reserved for future API enhancements
   onComplete,
-  onReset
+  onReset,
+  onSearchForPlan,
+  onManualEntry
 }) {
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
   const [, setDateOfBirth] = useState(null); // DOB stored for eligibility flow
   const [error, setError] = useState(null);
+
+  // Check if extracted card data has meaningful information
+  const isCardDataValid = (data) => {
+    if (!data) return false;
+    // Check if at least carrier name and member ID or subscriber name are present
+    const hasCarrier = data.carrierName && data.carrierName.trim() !== '';
+    const hasMemberId = data.identificationNumber && data.identificationNumber.trim() !== '';
+    const hasSubscriber = (data.subscriberName && data.subscriberName.trim() !== '') ||
+                          (data.firstName && data.firstName.trim() !== '') ||
+                          (data.fullName && data.fullName.trim() !== '');
+    // Need at least carrier OR (member ID and subscriber info) to proceed
+    return hasCarrier || (hasMemberId && hasSubscriber);
+  };
 
   // Handle capture and extraction
   const handleCaptureComplete = useCallback(async (file, previewUrl) => {
@@ -60,6 +77,14 @@ export default function EligibilityCheckStep({
 
     try {
       const data = await extractInsuranceCard(file);
+
+      // Validate that we got meaningful data
+      if (!isCardDataValid(data)) {
+        setError("We couldn't read the information from your card. Please try again with better lighting or positioning.");
+        goToStep(346); // Failure
+        return;
+      }
+
       setCardData(data);
       goToStep(343); // DOB input
     } catch (err) {
@@ -818,6 +843,48 @@ export default function EligibilityCheckStep({
         >
           Try Again
         </button>
+
+        {onSearchForPlan && (
+          <button
+            onClick={onSearchForPlan}
+            style={{
+              width: '100%',
+              marginTop: 12,
+              background: 'none',
+              border: `2px solid ${GREEN}`,
+              color: GREEN,
+              padding: '14px 28px',
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 600,
+              fontFamily: heading,
+              cursor: 'pointer'
+            }}
+          >
+            Search for My Insurance
+          </button>
+        )}
+
+        {onManualEntry && (
+          <button
+            onClick={onManualEntry}
+            style={{
+              width: '100%',
+              marginTop: 12,
+              background: 'none',
+              border: `2px solid ${BORDER}`,
+              color: TEXT_MED,
+              padding: '14px 28px',
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 600,
+              fontFamily: heading,
+              cursor: 'pointer'
+            }}
+          >
+            Enter Information Manually
+          </button>
+        )}
 
         <button
           onClick={() => onComplete?.(null)}
