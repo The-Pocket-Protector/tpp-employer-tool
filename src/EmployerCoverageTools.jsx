@@ -2527,7 +2527,7 @@ export default function EmployerCoverageTools() {
             <div style={{fontSize:13,color:TEXT_MED,marginBottom:8}}>Mon–Fri 8am–8pm · Sat 9am–5pm ET</div>
             <div style={{fontSize:12,color:TEXT_LIGHT}}>Average call time: 15–20 minutes. No sales pressure.</div>
           </div>
-          <a href="tel:+18667643312" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:17,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",cursor:"pointer"}}>Tap to Call Now</a>
+          <a href="tel:+18667643312" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:17,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",cursor:"pointer"}}>Tap to Call Now</a>
           {btnB(301)}
         </div>)}
 
@@ -2660,9 +2660,9 @@ export default function EmployerCoverageTools() {
           {sS("This determines your enrollment rights — specifically whether carriers are required to accept you regardless of health.")}
           {oS(<>
             <OptionCard title="I'm new to Medicare (turning 65 or just enrolled)" selected={mgNeeds.coverageSituation==="new_to_medicare"} onClick={()=>{setMgNeeds(n=>({...n,coverageSituation:"new_to_medicare",healthStatus:"good"}));autoAdvance(321)}}/>
-            <OptionCard title="I'm on a Medicare Advantage plan and want to switch" selected={mgNeeds.coverageSituation==="ma_plan"} onClick={()=>{setMgNeeds(n=>({...n,coverageSituation:"ma_plan"}));autoAdvance(3202)}}/>
-            <OptionCard title="I already have a Medigap plan and want to switch carriers" selected={mgNeeds.coverageSituation==="medigap_existing"} onClick={()=>{setMgNeeds(n=>({...n,coverageSituation:"medigap_existing"}));autoAdvance(3202)}}/>
-            <OptionCard title="I have Original Medicare only (Parts A & B, no supplement)" selected={mgNeeds.coverageSituation==="original_only"} onClick={()=>{setMgNeeds(n=>({...n,coverageSituation:"original_only"}));autoAdvance(3202)}}/>
+            <OptionCard title="I'm on a Medicare Advantage plan and want to switch" selected={mgNeeds.coverageSituation==="ma_plan"} onClick={()=>{const isGIState=GI_YEAR_ROUND_STATES[answers.state];setMgNeeds(n=>({...n,coverageSituation:"ma_plan",...(isGIState?{healthStatus:"good"}:{})}));autoAdvance(isGIState?321:3202)}}/>
+            <OptionCard title="I already have a Medigap plan and want to switch carriers" selected={mgNeeds.coverageSituation==="medigap_existing"} onClick={()=>{const isGIState=GI_YEAR_ROUND_STATES[answers.state];setMgNeeds(n=>({...n,coverageSituation:"medigap_existing",...(isGIState?{healthStatus:"good"}:{})}));autoAdvance(isGIState?321:3202)}}/>
+            <OptionCard title="I have Original Medicare only (Parts A & B, no supplement)" selected={mgNeeds.coverageSituation==="original_only"} onClick={()=>{const isGIState=GI_YEAR_ROUND_STATES[answers.state];setMgNeeds(n=>({...n,coverageSituation:"original_only",...(isGIState?{healthStatus:"good"}:{})}));autoAdvance(isGIState?321:3202)}}/>
             <OptionCard title="My employer coverage is ending" selected={mgNeeds.coverageSituation==="employer_ending"} onClick={()=>{setMgNeeds(n=>({...n,coverageSituation:"employer_ending",healthStatus:"good"}));autoAdvance(321)}}/>
           </>)}
           {btnB(320)}
@@ -2692,7 +2692,7 @@ export default function EmployerCoverageTools() {
 
         {/* Q4: Plan G vs N (existing — kept) */}
         {step===321&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
-          {sL("Question 4 of 6")}
+          {sL((mgNeeds.coverageSituation==="new_to_medicare"||mgNeeds.coverageSituation==="employer_ending"||GI_YEAR_ROUND_STATES[answers.state])?"Question 3 of 5":"Question 4 of 6")}
           {sT("Which sounds more like you?")}
           {sS("This determines which Medigap plan letter is right for you.")}
           {oS(<>
@@ -2719,7 +2719,7 @@ export default function EmployerCoverageTools() {
 
         {/* Q5: Visit frequency */}
         {step===322&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
-          {sL("Question 5 of 6")}
+          {sL((mgNeeds.coverageSituation==="new_to_medicare"||mgNeeds.coverageSituation==="employer_ending"||GI_YEAR_ROUND_STATES[answers.state])?"Question 4 of 5":"Question 5 of 6")}
           {sT("How often do you visit a doctor or specialist?")}
           {sS("This helps confirm the right plan and affects carrier selection.")}
           {oS(<>
@@ -2732,7 +2732,7 @@ export default function EmployerCoverageTools() {
 
         {/* Q6: Carrier preference (upgraded with scores) */}
         {step===323&&(<div key={animKey} style={{animation:"fadeUp 0.35s ease"}}>
-          {sL("Question 6 of 6")}
+          {sL((mgNeeds.coverageSituation==="new_to_medicare"||mgNeeds.coverageSituation==="employer_ending"||GI_YEAR_ROUND_STATES[answers.state])?"Question 5 of 5":"Question 6 of 6")}
           {sT("Do you have a preferred insurance carrier?")}
           {sS("Medigap plans are standardized — the same plan letter covers the same things from any carrier. The difference is premium, rate stability, and long-term cost.")}
           {oS(<>
@@ -2805,7 +2805,7 @@ export default function EmployerCoverageTools() {
             {maNeeds.secondHome===true&&planResult.plan.outOfArea&&<FactorCard type="info" badge="Coverage" title="You split time between two states — this plan covers you in both locations" text="This plan includes out-of-area coverage, so you're not limited to doctors in just one state."/>}
             {!planResult.needsMAPD&&planResult.veteranPlan&&<FactorCard type="info" badge="Rx" title="No Part D needed — your TRICARE/CHAMPVA covers prescriptions" text="Since you receive drug coverage through your military benefits, we recommended a plan without Part D to avoid duplicate coverage."/>}
 
-            <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",marginTop:24}}>Enroll in This Plan Online →</a>
+            <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",marginTop:24}}>Enroll in This Plan Online →</a>
             <div style={{fontSize:13,color:TEXT_MED,textAlign:"center",marginTop:8}}>Ready to enroll? This link takes you directly to the plan.</div>
           </>)}
 
@@ -2869,7 +2869,7 @@ export default function EmployerCoverageTools() {
                 <div style={{textAlign:"center",fontFamily:heading,fontSize:16,fontWeight:800,color:GREEN}}>10-Year Estimated Total: ~${(cm?.total10yr||0).toLocaleString()}</div>
               </div>
 
-              <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center"}}>Enroll in Medigap Plan →</a>
+              <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center"}}>Enroll in Medigap Plan →</a>
             </div>
 
             {/* Part D Card — Condensed */}
@@ -2881,7 +2881,7 @@ export default function EmployerCoverageTools() {
               </div>
               <div style={{fontSize:13,color:TEXT_MED,marginTop:2}}>Generic: ${partD?.tier1Copay} · Preferred: ${partD?.tier2Copay} · Brand: ${partD?.tier3Copay}</div>
               {prescriptions.length>0&&<div style={{marginTop:8,fontSize:14,color:TEXT_DARK,fontWeight:500}}>{Math.min(prescriptions.length,Math.round(prescriptions.length*0.9)+1)} of {prescriptions.length} medications covered</div>}
-              <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",marginTop:14,background:"#fff",color:GREEN,padding:"12px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",border:`2px solid ${GREEN}`}}>Enroll in Part D Plan →</a>
+              <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",marginTop:14,background:"#fff",color:GREEN,padding:"12px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",border:`2px solid ${GREEN}`}}>Enroll in Part D Plan →</a>
             </div>
 
             {/* Advisor fallback */}
@@ -3042,7 +3042,7 @@ export default function EmployerCoverageTools() {
             </div>
 
             {/* Booking CTA */}
-            <a href={agent.bookingUrl} target="_blank" rel="noopener" style={{display:"block",width:"100%",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center"}}>Book a Call With {fn} →</a>
+            <a href={agent.bookingUrl} target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center"}}>Book a Call With {fn} →</a>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:10}}>
               <div style={{width:10,height:10,borderRadius:"50%",background:GREEN}}/>
               <div style={{fontSize:13,color:TEXT_MED}}>{fn} currently has availability this week</div>
