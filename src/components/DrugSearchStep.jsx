@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { searchDrugs, getDrugDosages } from '../services/sunfire.service';
+import { searchDrugsWithGenericFallback, getDrugDosages } from '../services/sunfire.service';
 import {
   GREEN,
   GREEN_LIGHT,
@@ -43,6 +43,7 @@ export default function DrugSearchStep({
   const [selected, setSelected] = useState([...selectedDrugs]);
   const [error, setError] = useState(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [noResults, setNoResults] = useState(false);
 
   // Drug configuration state (for when a drug is selected but needs dosage/qty)
   const [pendingDrug, setPendingDrug] = useState(null);
@@ -76,6 +77,7 @@ export default function DrugSearchStep({
     if (searchQuery.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
+      setNoResults(false);
       return;
     }
 
@@ -84,21 +86,22 @@ export default function DrugSearchStep({
       setError(null);
 
       try {
-        // Use first 3 chars for API (or full query if shorter), with fuzzy matching
-        const searchPrefix = searchQuery.length >= 3 ? searchQuery.substring(0, 3) : searchQuery;
-        const result = await searchDrugs(searchPrefix, true);
+        const result = await searchDrugsWithGenericFallback(searchQuery);
         const drugs = result?.drugs || [];
 
         // Filter to match query and exclude already selected
         const selectedIds = new Set(selected.map(d => d.drugNameId || d.id));
+        const queryLower = searchQuery.toLowerCase();
         const filtered = drugs.filter(drug => {
-          const matchesQuery = drug.name.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchesName = drug.name.toLowerCase().includes(queryLower);
+          const matchesGeneric = drug.genericName?.toLowerCase().includes(queryLower);
           const notSelected = !selectedIds.has(drug.id);
-          return matchesQuery && notSelected;
+          return (matchesName || matchesGeneric) && notSelected;
         });
 
         setSuggestions(filtered.slice(0, 15));
         setShowSuggestions(filtered.length > 0);
+        setNoResults(filtered.length === 0);
         setHighlightedIndex(-1);
       } catch (err) {
         console.error('Drug search error:', err);
@@ -201,6 +204,7 @@ export default function DrugSearchStep({
       id: selectedDosage.id,
       drugNameId: pendingDrug.id,
       name: pendingDrug.name,
+      genericName: pendingDrug.genericName || null,
       strength: selectedDosage.strength || '',
       strengthUOM: selectedDosage.strengthUOM || '',
       form: selectedDosage.form || '',
@@ -257,14 +261,25 @@ export default function DrugSearchStep({
           padding: 20,
           marginBottom: 20
         }}>
-          <div style={{
-            fontSize: 16,
-            fontWeight: 600,
-            color: TEXT_DARK,
-            fontFamily: heading,
-            marginBottom: 16
-          }}>
-            {pendingDrug.name}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{
+              fontSize: 16,
+              fontWeight: 600,
+              color: TEXT_DARK,
+              fontFamily: heading
+            }}>
+              {pendingDrug.name}
+            </div>
+            {pendingDrug.genericName && (
+              <div style={{
+                fontSize: 13,
+                color: TEXT_MED,
+                fontFamily: body,
+                marginTop: 2
+              }}>
+                {pendingDrug.genericName}
+              </div>
+            )}
           </div>
 
           {/* Dosage selection */}
@@ -507,8 +522,30 @@ export default function DrugSearchStep({
                     }}>
                       {drug.name}
                     </div>
+                    {drug.genericName && (
+                      <div style={{
+                        fontSize: 12,
+                        color: TEXT_MED,
+                        fontFamily: body,
+                        marginTop: 2
+                      }}>
+                        {drug.genericName}
+                      </div>
+                    )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* No results message */}
+            {noResults && !isSearching && searchQuery.length >= 2 && (
+              <div style={{
+                fontSize: 13,
+                color: TEXT_LIGHT,
+                fontFamily: body,
+                marginTop: 8
+              }}>
+                No results found for "{searchQuery}"
               </div>
             )}
           </div>
@@ -577,6 +614,16 @@ export default function DrugSearchStep({
                 }}>
                   {drug.name}
                 </div>
+                {drug.genericName && (
+                  <div style={{
+                    fontSize: 12,
+                    color: TEXT_MED,
+                    fontFamily: body,
+                    marginTop: 1
+                  }}>
+                    {drug.genericName}
+                  </div>
+                )}
                 <div style={{
                   fontSize: 12,
                   color: TEXT_MED,

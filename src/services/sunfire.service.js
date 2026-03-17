@@ -211,6 +211,25 @@ export const searchDrugs = async (letters, fuzzy = false) => {
 };
 
 /**
+ * Search drugs via RxNorm + Sunfire verification (backend endpoint).
+ * Always resolves generic names and validates against Sunfire.
+ * Supports brand names, generic names, and partial names.
+ * Falls back to plain Sunfire search if backend/RxNorm is unavailable.
+ * @param {string} query - Drug name to search (brand, generic, or partial)
+ * @returns {Promise<{drugs: Array}>}
+ */
+export const searchDrugsWithGenericFallback = async (query) => {
+  try {
+    const response = await sunfireApi.get(`/sunfire/drug/generic/${encodeURIComponent(query)}`);
+    return response.data;
+  } catch (error) {
+    console.warn('RxNorm drug search failed, falling back to Sunfire:', error.message);
+    const searchPrefix = query.length >= 3 ? query.substring(0, 3) : query;
+    return await searchDrugs(searchPrefix, true);
+  }
+};
+
+/**
  * Get dosage information for a specific drug
  * @param {number} drugNameId - Drug name ID
  * @returns {Promise<Object>} Drug dosage list model
