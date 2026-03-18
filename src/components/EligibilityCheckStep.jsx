@@ -4,7 +4,7 @@
  * Steps 340-346: Instructions -> Camera -> Extracting -> DOB -> Checking -> Success -> Failure
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { extractInsuranceCard, formatCardDataForDisplay } from '../services/insurance-card.service';
 import { performEligibilityCheck } from '../services/stedi.service';
 import { FrameAnalyzer } from '../lib/card-detection/frame-analyzer';
@@ -35,7 +35,6 @@ import {
  * @param {function} props.onComplete - Callback when flow is complete
  * @param {function} props.onReset - Function to reset the entire flow
  * @param {function} props.onSearchForPlan - Callback when user wants to search for their plan instead of scanning
- * @param {function} props.onManualEntry - Callback when user wants to manually enter plan info
  */
 export default function EligibilityCheckStep({
   currentStep,
@@ -47,12 +46,12 @@ export default function EligibilityCheckStep({
   // zipCode and county are passed but reserved for future API enhancements
   onComplete,
   onReset,
-  onSearchForPlan,
-  onManualEntry
+  onSearchForPlan
 }) {
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
   const [, setDateOfBirth] = useState(null); // DOB stored for eligibility flow
   const [error, setError] = useState(null);
+  const [hasAttempted, setHasAttempted] = useState(false);
 
   // Check if extracted card data has meaningful information
   const isCardDataValid = (data) => {
@@ -81,6 +80,7 @@ export default function EligibilityCheckStep({
       // Validate that we got meaningful data
       if (!isCardDataValid(data)) {
         setError("We couldn't read the information from your card. Please try again with better lighting or positioning.");
+        setHasAttempted(true);
         goToStep(346); // Failure
         return;
       }
@@ -90,6 +90,7 @@ export default function EligibilityCheckStep({
     } catch (err) {
       console.error('Card extraction failed:', err);
       setError(err.message);
+      setHasAttempted(true);
       goToStep(346); // Failure
     }
   }, [goToStep, setCardData]);
@@ -123,11 +124,13 @@ export default function EligibilityCheckStep({
         // Show specific error from API if available
         const apiError = result.eligibility?.error;
         setError(apiError || 'Your insurance could not be verified as active.');
+        setHasAttempted(true);
         goToStep(346); // Failure
       }
     } catch (err) {
       console.error('Eligibility check failed:', err);
       setError(err.message);
+      setHasAttempted(true);
       goToStep(346); // Failure
     }
   }, [cardData, goToStep, setEligibilityResult]);
@@ -143,104 +146,15 @@ export default function EligibilityCheckStep({
     goToStep(341);
   }, [goToStep, setCardData, setEligibilityResult, resetCamera]);
 
-  // Step 340: Instructions
+  // Step 340: Skip instructions, go straight to camera
+  useEffect(() => {
+    if (currentStep === 340) {
+      goToStep(341);
+    }
+  }, [currentStep, goToStep]);
+
   if (currentStep === 340) {
-    return (
-      <div style={{ animation: 'fadeUp 0.35s ease' }}>
-        <div style={{
-          fontSize: 13,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: TEXT_LIGHT,
-          marginBottom: 8,
-          fontFamily: heading
-        }}>
-          Eligibility Check
-        </div>
-
-        <div style={{
-          fontFamily: heading,
-          fontSize: 24,
-          fontWeight: 800,
-          color: TEXT_DARK,
-          marginBottom: 8
-        }}>
-          Let's Check Your Eligibility
-        </div>
-
-        <div style={{
-          fontSize: 15,
-          color: TEXT_MED,
-          lineHeight: 1.6,
-          marginBottom: 24,
-          fontFamily: body
-        }}>
-          Scan your insurance card to verify your coverage in real-time.
-        </div>
-
-        {/* Insurance card illustration */}
-        <div style={{
-          background: BG_SUBTLE,
-          border: `2px dashed ${BORDER}`,
-          borderRadius: 16,
-          padding: 32,
-          textAlign: 'center',
-          marginBottom: 24
-        }}>
-          <div style={{ fontSize: 64, marginBottom: 16 }}>
-            <span role="img" aria-label="Insurance card">💳</span>
-          </div>
-          <div style={{
-            fontSize: 14,
-            color: TEXT_MED,
-            fontFamily: body,
-            lineHeight: 1.6
-          }}>
-            Have your insurance card ready.<br />
-            We'll scan the front to extract your information.
-          </div>
-        </div>
-
-        <button
-          onClick={() => goToStep(341)}
-          style={{
-            width: '100%',
-            padding: '16px 28px',
-            background: GREEN,
-            border: 'none',
-            borderRadius: 12,
-            fontSize: 16,
-            fontWeight: 700,
-            color: '#fff',
-            fontFamily: heading,
-            cursor: 'pointer'
-          }}
-        >
-          Scan Insurance Card
-        </button>
-
-        {onReset && (
-          <button
-            onClick={onReset}
-            style={{
-              width: '100%',
-              marginTop: 12,
-              background: 'none',
-              border: 'none',
-              color: TEXT_MED,
-              padding: '10px',
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: heading,
-              cursor: 'pointer'
-            }}
-          >
-            ← Back
-          </button>
-        )}
-      </div>
-    );
+    return null;
   }
 
   // Step 341: Camera Capture (Full Screen)
@@ -273,7 +187,7 @@ export default function EligibilityCheckStep({
                 {cameraError}
               </div>
               <button
-                onClick={() => goToStep(340)}
+                onClick={() => hasAttempted ? goToStep(346) : onReset?.()}
                 style={{
                   padding: '12px 24px',
                   background: GREEN,
@@ -364,7 +278,7 @@ export default function EligibilityCheckStep({
                 <button
                   onClick={() => {
                     stopCamera();
-                    goToStep(340);
+                    hasAttempted ? goToStep(346) : onReset?.();
                   }}
                   style={{
                     marginTop: 8,
@@ -798,33 +712,8 @@ export default function EligibilityCheckStep({
           marginBottom: 24,
           fontFamily: body
         }}>
-          {error || "We weren't able to verify your insurance eligibility. This could be due to:"}
+          {error || "We weren't able to verify your insurance eligibility. Please try again."}
         </div>
-
-        {!error && (
-          <div style={{
-            background: BG_SUBTLE,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 12,
-            padding: 20,
-            marginBottom: 24
-          }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>📋</span>
-                <span style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body }}>Incorrect or incomplete card information</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>📅</span>
-                <span style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body }}>Date of birth doesn't match records</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>🔄</span>
-                <span style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body }}>Temporary connection issues</span>
-              </div>
-            </div>
-          </div>
-        )}
 
         <button
           onClick={handleRetake}
@@ -844,7 +733,7 @@ export default function EligibilityCheckStep({
           Try Again
         </button>
 
-        {onSearchForPlan && (
+        {onSearchForPlan && !cardData?.payerId && (
           <button
             onClick={onSearchForPlan}
             style={{
@@ -864,46 +753,6 @@ export default function EligibilityCheckStep({
             Search for My Insurance
           </button>
         )}
-
-        {onManualEntry && (
-          <button
-            onClick={onManualEntry}
-            style={{
-              width: '100%',
-              marginTop: 12,
-              background: 'none',
-              border: `2px solid ${BORDER}`,
-              color: TEXT_MED,
-              padding: '14px 28px',
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 600,
-              fontFamily: heading,
-              cursor: 'pointer'
-            }}
-          >
-            Enter Information Manually
-          </button>
-        )}
-
-        <button
-          onClick={() => onComplete?.(null)}
-          style={{
-            width: '100%',
-            marginTop: 12,
-            background: 'none',
-            border: `2px solid ${BORDER}`,
-            color: TEXT_MED,
-            padding: '14px 28px',
-            borderRadius: 12,
-            fontSize: 15,
-            fontWeight: 600,
-            fontFamily: heading,
-            cursor: 'pointer'
-          }}
-        >
-          Continue Without Verification
-        </button>
 
         {onReset && (
           <button
