@@ -2,7 +2,7 @@
  * Stedi Service - Handles payer search and eligibility checking via backend API
  */
 
-import { railwayApi } from '../lib/axios';
+import { sunfireApi } from '../lib/axios';
 
 /**
  * Search for a payer by carrier name (returns first match)
@@ -11,7 +11,7 @@ import { railwayApi } from '../lib/axios';
  */
 export async function searchPayer(carrierName) {
   try {
-    const response = await railwayApi.get('/payers/search', {
+    const response = await sunfireApi.get('/payers/search', {
       params: { query: carrierName, eligibilityCheck: 'SUPPORTED' }
     });
 
@@ -42,7 +42,7 @@ export async function searchPayers(query) {
   }
 
   try {
-    const response = await railwayApi.get('/payers/search', {
+    const response = await sunfireApi.get('/payers/search', {
       params: { query: query.trim(), eligibilityCheck: 'SUPPORTED' }
     });
 
@@ -76,7 +76,7 @@ export async function searchPayers(query) {
  */
 export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth }) {
   try {
-    const response = await railwayApi.post('/stedi-mcp/agent/check', {
+    const response = await sunfireApi.post('/stedi-mcp/agent/check', {
       externalPatientId: memberId,
       firstName,
       lastName,

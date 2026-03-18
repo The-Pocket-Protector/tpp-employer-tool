@@ -2,7 +2,7 @@
  * Medicare Card Service - Handles Medicare card extraction
  */
 
-import { railwayApi, handleApiError } from '../lib/axios';
+import { sunfireApi, handleApiError } from '../lib/axios';
 
 /**
  * Extract Medicare card data from image
@@ -13,7 +13,7 @@ export async function extractMedicareCard(file) {
   try {
     const form = new FormData();
     form.append('file', file, 'medicare-card.jpg');
-    const response = await railwayApi.post('/medicard/extract', form, {
+    const response = await sunfireApi.post('/medicard/extract', form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
