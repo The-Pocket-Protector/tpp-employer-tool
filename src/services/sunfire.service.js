@@ -1,58 +1,10 @@
 /**
  * Sunfire Service - Unified service for Sunfire API operations
  * Handles Medicare sessions, plans, drugs, providers, and ZIP lookups
- * Includes fallback mock data for development without API access
  */
 
 import axios from 'axios';
 import { sunfireApi, handleApiError } from '../lib/axios';
-
-// ============================================
-// Mock Data for Development Fallbacks
-// ============================================
-
-const MOCK_PROVIDERS = [
-  { id: "1234567890", npi: "1234567890", name: "Dr. Sarah Chen", specialties: ["Cardiology"], address1: "123 Medical Center Dr", city: "Chicago", state: "IL", zip: "60601", phone: "312-555-0100" },
-  { id: "1234567891", npi: "1234567891", name: "Dr. James Wilson", specialties: ["Primary Care"], address1: "456 Health Ave", city: "Chicago", state: "IL", zip: "60602", phone: "312-555-0101" },
-  { id: "1234567892", npi: "1234567892", name: "Dr. Maria Rodriguez", specialties: ["Endocrinology"], address1: "789 Wellness Blvd", city: "Chicago", state: "IL", zip: "60603", phone: "312-555-0102" },
-  { id: "1234567893", npi: "1234567893", name: "Dr. Robert Kim", specialties: ["Orthopedics"], address1: "321 Care Lane", city: "Chicago", state: "IL", zip: "60604", phone: "312-555-0103" },
-  { id: "1234567894", npi: "1234567894", name: "Dr. Patricia Okafor", specialties: ["Internal Medicine"], address1: "654 Clinic St", city: "Chicago", state: "IL", zip: "60605", phone: "312-555-0104" },
-  { id: "1234567895", npi: "1234567895", name: "Dr. David Patel", specialties: ["Gastroenterology"], address1: "987 Doctor's Row", city: "Chicago", state: "IL", zip: "60606", phone: "312-555-0105" },
-  { id: "1234567896", npi: "1234567896", name: "Dr. Linda Nguyen", specialties: ["Oncology"], address1: "147 Hospital Way", city: "Chicago", state: "IL", zip: "60607", phone: "312-555-0106" },
-  { id: "1234567897", npi: "1234567897", name: "Dr. Michael Thompson", specialties: ["Pulmonology"], address1: "258 Medicine Park", city: "Chicago", state: "IL", zip: "60608", phone: "312-555-0107" },
-];
-
-const MOCK_DRUGS = [
-  { id: "1001", name: "Lisinopril", isGeneric: true },
-  { id: "1002", name: "Lipitor", isGeneric: false },
-  { id: "1003", name: "Metformin", isGeneric: true },
-  { id: "1004", name: "Metoprolol", isGeneric: true },
-  { id: "1005", name: "Atorvastatin", isGeneric: true },
-  { id: "1006", name: "Amlodipine", isGeneric: true },
-  { id: "1007", name: "Omeprazole", isGeneric: true },
-  { id: "1008", name: "Losartan", isGeneric: true },
-  { id: "1009", name: "Gabapentin", isGeneric: true },
-  { id: "1010", name: "Hydrochlorothiazide", isGeneric: true },
-  { id: "1011", name: "Eliquis", isGeneric: false },
-  { id: "1012", name: "Jardiance", isGeneric: false },
-  { id: "1013", name: "Xarelto", isGeneric: false },
-  { id: "1014", name: "Entresto", isGeneric: false },
-  { id: "1015", name: "Ozempic", isGeneric: false },
-];
-
-const MOCK_DRUG_DOSAGES = {
-  "1001": { drugDosage: { dosages: [{ id: 10011, name: "10mg", qty: 30, frequency: 1 }, { id: 10012, name: "20mg", qty: 30, frequency: 1 }] } },
-  "1002": { drugDosage: { dosages: [{ id: 10021, name: "10mg", qty: 30, frequency: 1 }, { id: 10022, name: "20mg", qty: 30, frequency: 1 }, { id: 10023, name: "40mg", qty: 30, frequency: 1 }] } },
-  "1003": { drugDosage: { dosages: [{ id: 10031, name: "500mg", qty: 60, frequency: 2 }, { id: 10032, name: "850mg", qty: 60, frequency: 2 }, { id: 10033, name: "1000mg", qty: 60, frequency: 2 }] } },
-  "1011": { drugDosage: { dosages: [{ id: 10111, name: "2.5mg", qty: 60, frequency: 2 }, { id: 10112, name: "5mg", qty: 60, frequency: 2 }] } },
-  "1015": { drugDosage: { dosages: [{ id: 10151, name: "0.25mg", qty: 4, frequency: 1 }, { id: 10152, name: "0.5mg", qty: 4, frequency: 1 }, { id: 10153, name: "1mg", qty: 4, frequency: 1 }, { id: 10154, name: "2mg", qty: 4, frequency: 1 }] } },
-};
-
-const MOCK_ZIP_DATA = {
-  '60601': { zip: '60601', city: 'Chicago', state: 'IL', county: 'Cook', fips: '17031' },
-  '10001': { zip: '10001', city: 'New York', state: 'NY', county: 'New York', fips: '36061' },
-  '90210': { zip: '90210', city: 'Beverly Hills', state: 'CA', county: 'Los Angeles', fips: '06037' },
-};
 
 // ============================================
 // ZIP Lookup Functions
@@ -68,14 +20,8 @@ export const lookupZip = async (zipCode) => {
     const response = await sunfireApi.get(`/sunfire/zip/${zipCode}`);
     return response.data;
   } catch (error) {
-    console.warn('ZIP lookup API failed, using mock data:', error.message);
-    const mock = MOCK_ZIP_DATA[zipCode] || { zip: zipCode, city: 'Sample City', state: 'IL', county: 'Sample County', fips: '17001' };
-    return {
-      zip: mock.zip,
-      counties: [{ name: mock.county, fips: mock.fips, state: mock.state }],
-      city: mock.city,
-      state: mock.state
-    };
+    console.error('ZIP lookup failed:', error.message);
+    throw new Error(`Could not look up ZIP code "${zipCode}". Please try again.`);
   }
 };
 
@@ -96,13 +42,8 @@ export const searchProviders = async (request) => {
     const response = await sunfireApi.post('/sunfire/providers/search', request);
     return response.data;
   } catch (error) {
-    console.warn('Provider search API failed, using mock data:', error.message);
-    const query = (request.provider_name || '').toLowerCase();
-    const maxSize = request.max_size || 10;
-    return MOCK_PROVIDERS
-      .filter(p => p.name.toLowerCase().includes(query) ||
-                   p.specialties.some(s => s.toLowerCase().includes(query)))
-      .slice(0, maxSize);
+    console.error('Provider search failed:', error.message);
+    throw new Error('Provider search failed. Please try again.');
   }
 };
 
@@ -116,8 +57,8 @@ export const searchProvidersByFullName = async (request) => {
     const response = await sunfireApi.post('/sunfire/providers/search/fullname', request);
     return response.data;
   } catch (error) {
-    console.warn('Provider fullname search API failed, using mock data:', error.message);
-    return searchProviders(request);
+    console.error('Provider fullname search failed:', error.message);
+    throw new Error('Provider search failed. Please try again.');
   }
 };
 
@@ -135,8 +76,8 @@ export const saveSession = async (session) => {
     const response = await sunfireApi.post('/sunfire/session', session);
     return response.data;
   } catch (error) {
-    console.warn('Save session API failed, returning mock session:', error.message);
-    return { ...session, customerCode: `MOCK-${Date.now()}`, saved: true };
+    console.error('Save session failed:', error.message);
+    throw new Error('Failed to save session. Please try again.');
   }
 };
 
@@ -152,8 +93,8 @@ export const getSession = async (customerCode, byExternalId = false) => {
     const response = await sunfireApi.get(`/sunfire/session/${customerCode}`, { params });
     return response.data;
   } catch (error) {
-    console.warn('Get session API failed:', error.message);
-    return { customerCode, zip: '60601', county: 'Cook', year: new Date().getFullYear() };
+    console.error('Get session failed:', error.message);
+    throw new Error('Failed to retrieve session. Please try again.');
   }
 };
 
@@ -167,8 +108,8 @@ export const patchSession = async (patch) => {
     const response = await sunfireApi.patch('/sunfire/session', patch);
     return response.data;
   } catch (error) {
-    console.warn('Patch session API failed:', error.message);
-    return { ...patch, patched: true };
+    console.error('Patch session failed:', error.message);
+    throw new Error('Failed to update session. Please try again.');
   }
 };
 
@@ -183,8 +124,8 @@ export const putSession = async (customerCode, session) => {
     const response = await sunfireApi.put(`/sunfire/session/${customerCode}`, session);
     return response.data;
   } catch (error) {
-    console.warn('Put session API failed:', error.message);
-    return { ...session, customerCode, updated: true };
+    console.error('Put session failed:', error.message);
+    throw new Error('Failed to update session. Please try again.');
   }
 };
 
@@ -203,10 +144,8 @@ export const searchDrugs = async (letters, fuzzy = false) => {
     const response = await sunfireApi.get(`/sunfire/drug/drugs/${letters}/${fuzzy}`);
     return response.data;
   } catch (error) {
-    console.warn('Drug search API failed, using mock data:', error.message);
-    const query = letters.toLowerCase();
-    const drugs = MOCK_DRUGS.filter(d => d.name.toLowerCase().includes(query));
-    return { drugs };
+    console.error('Drug search failed:', error.message);
+    throw new Error('Drug search failed. Please try again.');
   }
 };
 
@@ -239,10 +178,8 @@ export const getDrugDosages = async (drugNameId) => {
     const response = await sunfireApi.get(`/sunfire/drug/dosage/${drugNameId}`);
     return response.data;
   } catch (error) {
-    console.warn('Drug dosage API failed, using mock data:', error.message);
-    return MOCK_DRUG_DOSAGES[drugNameId.toString()] || {
-      drugDosage: { dosages: [{ id: drugNameId * 10 + 1, name: "Standard", qty: 30, frequency: 1 }] }
-    };
+    console.error('Drug dosage lookup failed:', error.message);
+    throw new Error('Failed to get drug dosage information. Please try again.');
   }
 };
 
@@ -260,8 +197,8 @@ export const calculatePlans = async (session) => {
     const response = await sunfireApi.post('/sunfire/plans', session);
     return response.data;
   } catch (error) {
-    console.warn('Calculate plans API failed:', error.message);
-    return { plans: [], message: 'Using mock data - no plans available' };
+    console.error('Calculate plans failed:', error.message);
+    throw new Error('Failed to calculate plans. Please try again.');
   }
 };
 
@@ -276,8 +213,8 @@ export const getPlansByProfile = async (customerCode, year) => {
     const response = await sunfireApi.get(`/sunfire/plans/profile/${customerCode}/${year}`);
     return response.data;
   } catch (error) {
-    console.warn('Get plans by profile API failed:', error.message);
-    return { plans: [] };
+    console.error('Get plans by profile failed:', error.message);
+    throw new Error('Failed to get plans. Please try again.');
   }
 };
 
@@ -296,8 +233,8 @@ export const getPlanRecommendations = async (customerCode, year, options = {}) =
     );
     return response.data;
   } catch (error) {
-    console.warn('Get plan recommendations API failed:', error.message);
-    return { recommendations: [] };
+    console.error('Get plan recommendations failed:', error.message);
+    throw new Error('Failed to get plan recommendations. Please try again.');
   }
 };
 
@@ -332,31 +269,8 @@ export const getRecommendationsV6 = async (customerCode, year, payload = {}) => 
     );
     return response.data;
   } catch (error) {
-    console.warn('Get V6 plan recommendations API failed:', error.message);
-    // Return mock data for development
-    return {
-      planOverview: {
-        name: 'Sample Medicare Advantage Plan',
-        premium: '$0',
-        contractId: 'H1234',
-        planId: '001'
-      },
-      benefits: [
-        { category: 'Doctor Visits', currentValue: '$30 copay', newValue: '$0 copay', comparison: 'better' },
-        { category: 'Out-of-Pocket Max', currentValue: '$6,700', newValue: '$3,400', comparison: 'better' },
-        { category: 'Dental Allowance', currentValue: '$0', newValue: '$2,000/year', comparison: 'better' },
-        { category: 'Vision', currentValue: '$50 allowance', newValue: '$150 allowance', comparison: 'better' },
-        { category: 'Hearing', currentValue: 'Not covered', newValue: '$1,500 allowance', comparison: 'better' },
-        { category: 'Prescription Coverage', currentValue: 'Tier 1: $10', newValue: 'Tier 1: $10', comparison: 'similar' },
-        { category: 'Hospital Stay', currentValue: '$300/day', newValue: '$295/day', comparison: 'similar' },
-        { category: 'Specialist Visit', currentValue: '$40', newValue: '$45', comparison: 'worse' }
-      ],
-      doctorsCovered: true,
-      medicationsCovered: true,
-      totalPlansInCounty: 42,
-      closing: 'Based on your current coverage and healthcare needs, this plan could save you money while providing better benefits.',
-      button: { label: 'Apply for this plan online', value: 'apply_online' }
-    };
+    console.error('Get V6 plan recommendations failed:', error.message);
+    throw new Error('Failed to get plan recommendations. Please try again.');
   }
 };
 
@@ -378,8 +292,8 @@ export const getPlansList = async (year, zip, county) => {
 
     return [];
   } catch (error) {
-    console.warn('Get plans list API failed:', error.message);
-    return [];
+    console.error('Get plans list failed:', error.message);
+    throw new Error('Failed to get plans list. Please try again.');
   }
 };
 
@@ -408,8 +322,8 @@ export const getPlansByHCode = async (year, zip, county, hcode, optional = {}) =
     }
     return data;
   } catch (error) {
-    console.warn('Get plans by HCode API failed:', error.message);
-    return { plans: [], currentPlan: null, savedSession: null, MAPDFilters: null, PDFilters: null, MAFilters: null, SNPFilters: null };
+    console.error('Get plans by HCode failed:', error.message);
+    throw new Error('Failed to get plans. Please try again.');
   }
 };
 
@@ -427,8 +341,8 @@ export const calculateDrugCosts = async (coverageBeginsDate, session) => {
     );
     return response.data;
   } catch (error) {
-    console.warn('Calculate drug costs API failed:', error.message);
-    return { drugCosts: [] };
+    console.error('Calculate drug costs failed:', error.message);
+    throw new Error('Failed to calculate drug costs. Please try again.');
   }
 };
 
@@ -446,8 +360,8 @@ export const providerFindPlans = async (payload) => {
     const response = await sunfireApi.post('/sunfire/providers/find/plans', payload);
     return response.data;
   } catch (error) {
-    console.warn('Provider find plans API failed:', error.message);
-    return { plans: [] };
+    console.error('Provider find plans failed:', error.message);
+    throw new Error('Failed to find plans for provider. Please try again.');
   }
 };
 
@@ -466,8 +380,8 @@ export const checkCarrierSupport = async (payload) => {
     const response = await sunfireApi.post('/sunfire/plans/carrier/support', payload);
     return response.data;
   } catch (error) {
-    console.warn('Check carrier support API failed:', error.message);
-    return { supported: true };
+    console.error('Check carrier support failed:', error.message);
+    throw new Error('Failed to check carrier support. Please try again.');
   }
 };
 

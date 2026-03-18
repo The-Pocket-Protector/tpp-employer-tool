@@ -7,7 +7,7 @@ import CardCaptureStep from "./components/CardCaptureStep";
 import InsuranceCardCapture from "./components/InsuranceCardCapture";
 import EligibilityCheckStep from "./components/EligibilityCheckStep";
 import { extractInsuranceCard } from "./services/insurance-card.service";
-import { searchPayers } from "./services/payer.service";
+import { searchPayers } from "./services/stedi.service";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
 const TEXT_DARK = "#1e293b", TEXT_MED = "#475569", TEXT_LIGHT = "#94a3b8", BORDER = "#e2e8f0";
@@ -131,111 +131,9 @@ async function extractPlanFromCard(imageFile) {
   };
 }
 
-// ─── DOCTOR DUMMY DATA ───
-const DOCTORS_DB = [
-  {npi:"1234567890",name:"Dr. Sarah Chen",specialty:"Cardiology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567891",name:"Dr. James Wilson",specialty:"Primary Care",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567892",name:"Dr. Maria Rodriguez",specialty:"Endocrinology",city:"Houston",state:"TX",network:"broad"},
-  {npi:"1234567893",name:"Dr. Robert Kim",specialty:"Orthopedics",city:"Phoenix",state:"AZ",network:"broad"},
-  {npi:"1234567894",name:"Dr. Patricia Okafor",specialty:"Internal Medicine",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567895",name:"Dr. David Patel",specialty:"Gastroenterology",city:"Miami",state:"FL",network:"limited"},
-  {npi:"1234567896",name:"Dr. Linda Nguyen",specialty:"Oncology",city:"Denver",state:"CO",network:"broad"},
-  {npi:"1234567897",name:"Dr. Michael Thompson",specialty:"Pulmonology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567898",name:"Dr. Susan Martinez",specialty:"Dermatology",city:"Phoenix",state:"AZ",network:"broad"},
-  {npi:"1234567899",name:"Dr. Richard Campbell",specialty:"Neurology",city:"Houston",state:"TX",network:"limited"},
-  {npi:"1234567900",name:"Dr. Karen Lewis",specialty:"Rheumatology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567901",name:"Dr. Thomas Jackson",specialty:"Primary Care",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567902",name:"Dr. Nancy White",specialty:"Ophthalmology",city:"Denver",state:"CO",network:"broad"},
-  {npi:"1234567903",name:"Dr. Christopher Lee",specialty:"Urology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567904",name:"Dr. Angela Davis",specialty:"Psychiatry",city:"Houston",state:"TX",network:"limited"},
-  {npi:"1234567905",name:"Dr. Steven Hernandez",specialty:"Cardiology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567906",name:"Dr. Dorothy Brown",specialty:"Internal Medicine",city:"Phoenix",state:"AZ",network:"broad"},
-  {npi:"1234567907",name:"Dr. Paul Garcia",specialty:"Orthopedics",city:"Denver",state:"CO",network:"broad"},
-  {npi:"1234567908",name:"Dr. Betty Robinson",specialty:"Primary Care",city:"Tampa",state:"FL",network:"broad"},
-  {npi:"1234567909",name:"Dr. Mark Anderson",specialty:"Gastroenterology",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567910",name:"Dr. Helen Clark",specialty:"Endocrinology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567911",name:"Dr. George Wright",specialty:"Pulmonology",city:"Houston",state:"TX",network:"broad"},
-  {npi:"1234567912",name:"Dr. Sandra Lopez",specialty:"Dermatology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567913",name:"Dr. Kenneth Hill",specialty:"Oncology",city:"Phoenix",state:"AZ",network:"limited"},
-  {npi:"1234567914",name:"Dr. Donna Scott",specialty:"Neurology",city:"Denver",state:"CO",network:"broad"},
-  {npi:"1234567915",name:"Dr. Edward Green",specialty:"Primary Care",city:"Tampa",state:"FL",network:"broad"},
-  {npi:"1234567916",name:"Dr. Carol Adams",specialty:"Rheumatology",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567917",name:"Dr. Brian Baker",specialty:"Cardiology",city:"Houston",state:"TX",network:"broad"},
-  {npi:"1234567918",name:"Dr. Sharon Nelson",specialty:"Internal Medicine",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567919",name:"Dr. Ronald Carter",specialty:"Ophthalmology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567920",name:"Dr. Deborah Mitchell",specialty:"Primary Care",city:"Scottsdale",state:"AZ",network:"broad"},
-  {npi:"1234567921",name:"Dr. Jeffrey Perez",specialty:"Urology",city:"Houston",state:"TX",network:"broad"},
-  {npi:"1234567922",name:"Dr. Laura Roberts",specialty:"Psychiatry",city:"Denver",state:"CO",network:"limited"},
-  {npi:"1234567923",name:"Dr. Daniel Turner",specialty:"Orthopedics",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567924",name:"Dr. Margaret Phillips",specialty:"Gastroenterology",city:"Tampa",state:"FL",network:"broad"},
-  {npi:"1234567925",name:"Dr. Anthony Evans",specialty:"Primary Care",city:"Phoenix",state:"AZ",network:"broad"},
-  {npi:"1234567926",name:"Dr. Lisa Edwards",specialty:"Endocrinology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567927",name:"Dr. Kevin Collins",specialty:"Cardiology",city:"Denver",state:"CO",network:"broad"},
-  {npi:"1234567928",name:"Dr. Ruth Stewart",specialty:"Internal Medicine",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567929",name:"Dr. Jason Sanchez",specialty:"Pulmonology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567930",name:"Dr. Virginia Morris",specialty:"Primary Care",city:"Houston",state:"TX",network:"broad"},
-  {npi:"1234567931",name:"Dr. Frank Rogers",specialty:"Oncology",city:"Miami",state:"FL",network:"broad"},
-  {npi:"1234567932",name:"Dr. Diane Reed",specialty:"Neurology",city:"Tampa",state:"FL",network:"broad"},
-  {npi:"1234567933",name:"Dr. Raymond Cook",specialty:"Dermatology",city:"Chicago",state:"IL",network:"broad"},
-  {npi:"1234567934",name:"Dr. Marie Morgan",specialty:"OB/GYN",city:"Atlanta",state:"GA",network:"broad"},
-  {npi:"1234567935",name:"Dr. Ricardo Vasquez",specialty:"Cardiology",city:"Houston",state:"TX",network:"broad"},
-];
-
-// ─── DRUG DUMMY DATA ───
-const DRUGS_DB = [
-  {id:"rx_001",brandName:"Eliquis",genericName:"apixaban",dosages:["2.5mg","5mg"],defaultDosage:"5mg",form:"tablet",frequency:"Twice daily",therapeuticClass:"Blood Thinner",tier:"preferred-brand"},
-  {id:"rx_002",brandName:"Jardiance",genericName:"empagliflozin",dosages:["10mg","25mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Diabetes",tier:"preferred-brand"},
-  {id:"rx_003",brandName:"Xarelto",genericName:"rivarbanil",dosages:["10mg","15mg","20mg"],defaultDosage:"20mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Thinner",tier:"preferred-brand"},
-  {id:"rx_004",brandName:"Entresto",genericName:"sacubitril/valsartan",dosages:["24/26mg","49/51mg","97/103mg"],defaultDosage:"49/51mg",form:"tablet",frequency:"Twice daily",therapeuticClass:"Heart Failure",tier:"preferred-brand"},
-  {id:"rx_005",brandName:"Ozempic",genericName:"semaglutide",dosages:["0.25mg","0.5mg","1mg","2mg"],defaultDosage:"0.5mg",form:"injection",frequency:"Once weekly",therapeuticClass:"Diabetes",tier:"specialty"},
-  {id:"rx_006",brandName:"Lipitor",genericName:"atorvastatin",dosages:["10mg","20mg","40mg","80mg"],defaultDosage:"20mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Cholesterol",tier:"generic"},
-  {id:"rx_007",brandName:"Metformin",genericName:"metformin",dosages:["500mg","850mg","1000mg"],defaultDosage:"500mg",form:"tablet",frequency:"Twice daily",therapeuticClass:"Diabetes",tier:"generic"},
-  {id:"rx_008",brandName:"Lisinopril",genericName:"lisinopril",dosages:["5mg","10mg","20mg","40mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Pressure",tier:"generic"},
-  {id:"rx_009",brandName:"Amlodipine",genericName:"amlodipine",dosages:["2.5mg","5mg","10mg"],defaultDosage:"5mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Pressure",tier:"generic"},
-  {id:"rx_010",brandName:"Omeprazole",genericName:"omeprazole",dosages:["10mg","20mg","40mg"],defaultDosage:"20mg",form:"capsule",frequency:"Once daily",therapeuticClass:"Acid Reflux",tier:"generic"},
-  {id:"rx_011",brandName:"Synthroid",genericName:"levothyroxine",dosages:["25mcg","50mcg","75mcg","100mcg","125mcg"],defaultDosage:"50mcg",form:"tablet",frequency:"Once daily",therapeuticClass:"Thyroid",tier:"generic"},
-  {id:"rx_012",brandName:"Neurontin",genericName:"gabapentin",dosages:["100mg","300mg","400mg","600mg"],defaultDosage:"300mg",form:"capsule",frequency:"Three times daily",therapeuticClass:"Nerve Pain",tier:"generic"},
-  {id:"rx_013",brandName:"Cozaar",genericName:"losartan",dosages:["25mg","50mg","100mg"],defaultDosage:"50mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Pressure",tier:"generic"},
-  {id:"rx_014",brandName:"Atorvastatin",genericName:"atorvastatin",dosages:["10mg","20mg","40mg","80mg"],defaultDosage:"40mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Cholesterol",tier:"generic"},
-  {id:"rx_015",brandName:"Crestor",genericName:"rosuvastatin",dosages:["5mg","10mg","20mg","40mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Cholesterol",tier:"preferred-generic"},
-  {id:"rx_016",brandName:"Cymbalta",genericName:"duloxetine",dosages:["20mg","30mg","60mg"],defaultDosage:"60mg",form:"capsule",frequency:"Once daily",therapeuticClass:"Depression / Pain",tier:"preferred-generic"},
-  {id:"rx_017",brandName:"Flomax",genericName:"tamsulosin",dosages:["0.4mg"],defaultDosage:"0.4mg",form:"capsule",frequency:"Once daily",therapeuticClass:"Prostate",tier:"generic"},
-  {id:"rx_018",brandName:"Singulair",genericName:"montelukast",dosages:["4mg","5mg","10mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Respiratory",tier:"generic"},
-  {id:"rx_019",brandName:"Carvedilol",genericName:"carvedilol",dosages:["3.125mg","6.25mg","12.5mg","25mg"],defaultDosage:"12.5mg",form:"tablet",frequency:"Twice daily",therapeuticClass:"Heart Failure",tier:"generic"},
-  {id:"rx_020",brandName:"Lasix",genericName:"furosemide",dosages:["20mg","40mg","80mg"],defaultDosage:"40mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Diuretic",tier:"generic"},
-  {id:"rx_021",brandName:"Coumadin",genericName:"warfarin",dosages:["1mg","2mg","5mg","10mg"],defaultDosage:"5mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Thinner",tier:"generic"},
-  {id:"rx_022",brandName:"Prednisone",genericName:"prednisone",dosages:["5mg","10mg","20mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Anti-inflammatory",tier:"generic"},
-  {id:"rx_023",brandName:"ProAir",genericName:"albuterol",dosages:["90mcg"],defaultDosage:"90mcg",form:"inhaler",frequency:"As needed",therapeuticClass:"Respiratory",tier:"preferred-generic"},
-  {id:"rx_024",brandName:"Protonix",genericName:"pantoprazole",dosages:["20mg","40mg"],defaultDosage:"40mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Acid Reflux",tier:"generic"},
-  {id:"rx_025",brandName:"Plavix",genericName:"clopidogrel",dosages:["75mg"],defaultDosage:"75mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Thinner",tier:"generic"},
-  {id:"rx_026",brandName:"Januvia",genericName:"sitagliptin",dosages:["25mg","50mg","100mg"],defaultDosage:"100mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Diabetes",tier:"preferred-brand"},
-  {id:"rx_027",brandName:"Farxiga",genericName:"dapagliflozin",dosages:["5mg","10mg"],defaultDosage:"10mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Diabetes / Heart Failure",tier:"preferred-brand"},
-  {id:"rx_028",brandName:"Eliquis",genericName:"apixaban",dosages:["2.5mg","5mg"],defaultDosage:"2.5mg",form:"tablet",frequency:"Twice daily",therapeuticClass:"Blood Thinner",tier:"preferred-brand"},
-  {id:"rx_029",brandName:"Spiriva",genericName:"tiotropium",dosages:["1.25mcg","2.5mcg"],defaultDosage:"2.5mcg",form:"inhaler",frequency:"Once daily",therapeuticClass:"COPD / Respiratory",tier:"preferred-brand"},
-  {id:"rx_030",brandName:"Hydrochlorothiazide",genericName:"hydrochlorothiazide",dosages:["12.5mg","25mg","50mg"],defaultDosage:"25mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Pressure / Diuretic",tier:"generic"},
-  {id:"rx_031",brandName:"Metoprolol",genericName:"metoprolol succinate",dosages:["25mg","50mg","100mg","200mg"],defaultDosage:"50mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Blood Pressure / Heart",tier:"generic"},
-  {id:"rx_032",brandName:"Sertraline",genericName:"sertraline",dosages:["25mg","50mg","100mg"],defaultDosage:"50mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Depression / Anxiety",tier:"generic"},
-  {id:"rx_033",brandName:"Tramadol",genericName:"tramadol",dosages:["50mg","100mg"],defaultDosage:"50mg",form:"tablet",frequency:"Every 4-6 hours",therapeuticClass:"Pain Relief",tier:"generic"},
-  {id:"rx_034",brandName:"Tresiba",genericName:"insulin degludec",dosages:["100u/mL","200u/mL"],defaultDosage:"100u/mL",form:"injection",frequency:"Once daily",therapeuticClass:"Diabetes (Insulin)",tier:"preferred-brand"},
-  {id:"rx_035",brandName:"Trulicity",genericName:"dulaglutide",dosages:["0.75mg","1.5mg","3mg","4.5mg"],defaultDosage:"1.5mg",form:"injection",frequency:"Once weekly",therapeuticClass:"Diabetes",tier:"preferred-brand"},
-  {id:"rx_036",brandName:"Vitamin D3",genericName:"cholecalciferol",dosages:["1000IU","2000IU","5000IU"],defaultDosage:"2000IU",form:"capsule",frequency:"Once daily",therapeuticClass:"Supplement",tier:"generic"},
-  {id:"rx_037",brandName:"Xanax",genericName:"alprazolam",dosages:["0.25mg","0.5mg","1mg"],defaultDosage:"0.5mg",form:"tablet",frequency:"As needed",therapeuticClass:"Anxiety",tier:"generic"},
-  {id:"rx_038",brandName:"Symbicort",genericName:"budesonide/formoterol",dosages:["80/4.5mcg","160/4.5mcg"],defaultDosage:"160/4.5mcg",form:"inhaler",frequency:"Twice daily",therapeuticClass:"Asthma / COPD",tier:"preferred-brand"},
-  {id:"rx_039",brandName:"Rybelsus",genericName:"semaglutide",dosages:["3mg","7mg","14mg"],defaultDosage:"7mg",form:"tablet",frequency:"Once daily",therapeuticClass:"Diabetes",tier:"preferred-brand"},
-  {id:"rx_040",brandName:"Potassium Chloride",genericName:"potassium chloride",dosages:["10mEq","20mEq"],defaultDosage:"20mEq",form:"tablet",frequency:"Once daily",therapeuticClass:"Electrolyte",tier:"generic"},
-];
 
 
-// ─── DUMMY PLAN DATA (swap for API later) ───
-const MA_PLANS = [
-  {id:"ma_1",name:"Aetna Medicare Advantage HMO",type:"HMO",premium:0,deductible:0,pcpCopay:0,specCopay:40,oopMax:4500,dental:"Preventive + Basic",vision:"Annual exam + $150 allowance",hearing:"$1,000/yr allowance",gym:"SilverSneakers",otc:"$75/quarter",transport:true,drugCoverage:true,diabetesProgram:true,outOfArea:false,rating:4.5},
-  {id:"ma_2",name:"Humana Gold Plus HMO",type:"HMO",premium:0,deductible:0,pcpCopay:5,specCopay:35,oopMax:5200,dental:"Preventive only",vision:"Annual exam",hearing:"None",gym:"SilverSneakers",otc:"$50/quarter",transport:false,drugCoverage:true,diabetesProgram:false,outOfArea:false,rating:4.0},
-  {id:"ma_3",name:"UnitedHealthcare AARP PPO",type:"PPO",premium:27,deductible:0,pcpCopay:0,specCopay:35,oopMax:5900,dental:"Preventive + Comprehensive",vision:"Annual exam + $200 allowance",hearing:"$2,500/yr allowance",gym:"Renew Active",otc:"$100/quarter",transport:true,drugCoverage:true,diabetesProgram:true,outOfArea:true,rating:4.5},
-  {id:"ma_4",name:"Aetna Medicare PPO",type:"PPO",premium:0,deductible:250,pcpCopay:10,specCopay:45,oopMax:6700,dental:"Preventive + Basic",vision:"Annual exam + $100 allowance",hearing:"$1,000/yr allowance",gym:"SilverSneakers",otc:"$60/quarter",transport:false,drugCoverage:true,diabetesProgram:false,outOfArea:true,rating:4.0},
-  {id:"ma_5",name:"Blue Cross Medicare Advantage HMO",type:"HMO",premium:15,deductible:0,pcpCopay:0,specCopay:30,oopMax:3800,dental:"Preventive + Comprehensive + Dentures",vision:"Annual exam + $250 allowance",hearing:"$3,000/yr allowance",gym:"SilverSneakers",otc:"$120/quarter",transport:true,drugCoverage:true,diabetesProgram:true,outOfArea:false,rating:4.5},
-  {id:"ma_6",name:"Cigna Medicare Advantage PPO",type:"PPO",premium:45,deductible:0,pcpCopay:0,specCopay:25,oopMax:4200,dental:"Preventive + Comprehensive",vision:"Annual exam + $300 allowance",hearing:"$2,500/yr allowance",gym:"SilverSneakers",otc:"$150/quarter",transport:true,drugCoverage:true,diabetesProgram:true,outOfArea:true,rating:4.5},
-  {id:"ma_dsnp_1",name:"UnitedHealthcare Dual Complete HMO D-SNP",type:"HMO",premium:0,deductible:0,pcpCopay:0,specCopay:0,oopMax:0,dental:"Preventive + Comprehensive + Dentures ($5,000/yr)",vision:"Annual exam + $400 eyewear allowance",hearing:"$3,000/yr hearing aid allowance",gym:"SilverSneakers",otc:"$200/quarter OTC + grocery allowance",transport:true,drugCoverage:true,diabetesProgram:true,outOfArea:false,rating:4.5,isDSNP:true},
-];
+
 
 // ─── CSG MEDIGAP ENGINE (ported from med_supp_calculator.py) ───
 
@@ -549,50 +447,21 @@ function runGuideMatchEngine(prefs, recType) {
 }
 
 function matchMAPlan(needs, doctors, prescriptions) {
-  // Medicaid hard override
-  if (needs.medicaid === true) {
-    const dsnp = MA_PLANS.find(p => p.isDSNP);
-    return { plan: dsnp, docMatch: doctors.length, rxMatch: prescriptions.length, isDSNP: true, veteranPlan: false };
-  }
-  let plans = [...MA_PLANS].filter(p => !p.isDSNP);
-  // Second home hard filter
-  if (needs.secondHome === true) plans = plans.filter(p => p.outOfArea);
-  if (plans.length === 0) plans = MA_PLANS.filter(p => p.type === "PPO" && !p.isDSNP);
-  if (plans.length === 0) plans = [...MA_PLANS].filter(p => !p.isDSNP);
-  // MAPD vs MA-only
-  const needsMAPD = !(needs.veteran && needs.vaPrimaryCare === true && (needs.tricare || needs.champva));
-  if (needsMAPD) plans = plans.filter(p => p.drugCoverage);
-  // Score each plan
-  const lowestMOOP = Math.min(...plans.map(p => p.oopMax));
-  plans = plans.map(p => {
-    let s = p.rating * 10;
-    // Visit frequency scoring
-    if (needs.visitFreq === "rare" && p.premium === 0) s += 3;
-    if (needs.visitFreq === "regular" && p.specCopay < 40) s += 3;
-    if (needs.visitFreq === "frequent") { if (p.oopMax === lowestMOOP) s += 5; if (p.specCopay <= 30) s += 3; if (p.deductible === 0) s += 2; }
-    // Veteran giveback boost
-    if (needs.veteran) s += 4;
-    // Dental scoring
-    if (needs.dentalNeed === "major") { if (p.dental.includes("Comprehensive")) s += 5; else if (p.dental.includes("Basic")) s += 2; }
-    if (needs.dentalNeed === "dentures") { if (p.dental.includes("Dentures")) s += 7; else if (p.dental.includes("Comprehensive")) s += 4; }
-    if (needs.dentalNeed === "unsure" && !p.dental.includes("Preventive only")) s += 2;
-    // Second home / travel
-    if (needs.secondHome === "travel") { if (p.outOfArea) s += 3; if (p.type === "PPO") s += 2; }
-    return { ...p, _score: s };
-  });
-  plans.sort((a, b) => b._score - a._score);
-  const plan = plans[0] || MA_PLANS[0];
+  // TODO: Replace with real API plan data (e.g. from getRecommendationsV6 or calculatePlans)
   return {
-    plan, isDSNP: false, veteranPlan: needs.veteran || false, needsMAPD,
-    docMatch: Math.min(doctors.length, Math.max(doctors.length - 1, Math.round(doctors.length * 0.85))),
-    rxMatch: Math.min(prescriptions.length, Math.max(prescriptions.length - 1, Math.round(prescriptions.length * 0.9)))
+    plan: null,
+    isDSNP: needs.medicaid === true,
+    veteranPlan: needs.veteran || false,
+    needsMAPD: !(needs.veteran && needs.vaPrimaryCare === true && (needs.tricare || needs.champva)),
+    docMatch: 0,
+    rxMatch: 0
   };
 }
 
 
 
 
-// ─── SEARCH FUNCTIONS (uses real API with fallback to mock data) ───
+// ─── SEARCH FUNCTIONS ───
 async function searchDoctorsWithZip(query, zipCode) {
   if (query.length < 2) return [];
   try {
@@ -612,12 +481,7 @@ async function searchDoctorsWithZip(query, zipCode) {
     }));
   } catch (error) {
     console.error('Doctor search error:', error);
-    // Fallback to mock data if API fails
-    const q = query.toLowerCase();
-    return DOCTORS_DB.filter(d =>
-      d.name.toLowerCase().includes(q) ||
-      d.specialty.toLowerCase().includes(q)
-    ).slice(0, 8);
+    return [];
   }
 }
 
@@ -666,12 +530,7 @@ async function searchDrugs(query) {
     return [];
   } catch (error) {
     console.error('Drug search error:', error);
-    // Fallback to mock data if API fails
-    const q = query.toLowerCase();
-    return DRUGS_DB.filter(d =>
-      d.brandName.toLowerCase().includes(q) ||
-      d.genericName.toLowerCase().includes(q)
-    ).slice(0, 8);
+    return [];
   }
 }
 
@@ -716,7 +575,7 @@ function TypeaheadSearch({ searchFn, renderResult, onSelect, placeholder, label 
 
   return (
     <div ref={containerRef} style={{ position: "relative" }}>
-      <div style={{ fontFamily: heading, fontWeight: 700, fontSize: 14, color: TEXT_DARK, marginBottom: 10 }}>{label}</div>
+      {label && <div style={{ fontFamily: heading, fontWeight: 700, fontSize: 14, color: TEXT_DARK, marginBottom: 10 }}>{label}</div>}
       <input
         type="text" value={query} onChange={handleChange} onKeyDown={handleKeyDown} onFocus={() => { if (results.length > 0) setOpen(true); }} onBlur={handleBlur}
         placeholder={placeholder}
@@ -1610,15 +1469,21 @@ export default function EmployerCoverageTools() {
             )}
 
             {/* Payer Search Button - for "similar" preference */}
-            {answers.preference === "similar" && (
+            {answers.preference === "similar" && !matchedPlan && !selectedPayer && (
               <button onClick={() => goTo(10506)} style={{width:"100%",padding:"14px 20px",marginBottom:16,background:"#fff",border:`2px solid ${BORDER}`,borderRadius:12,fontSize:14,fontWeight:600,color:TEXT_DARK,fontFamily:heading,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
                 <span style={{fontSize:18}}>🔍</span> Search for your employer and plan
               </button>
             )}
 
-            <button onClick={() => goTo(340)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
-              Verify Your Eligibility →
-            </button>
+            {selectedPayer ? (
+              <button onClick={() => goTo(349)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
+                Continue →
+              </button>
+            ) : (
+              <button onClick={() => goTo(340)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
+                Verify Your Eligibility →
+              </button>
+            )}
 
             <button onClick={() => goTo(105)} style={{width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer"}}>
               ← Back
@@ -1666,7 +1531,7 @@ export default function EmployerCoverageTools() {
                 <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.carrierName || planIdResult.planName}</div>
                 <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Subscriber: {planIdResult.subscriberName}</div><div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Member ID: {planIdResult.memberId}</div>
               </div>
-              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
+              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right →</button>
               <button onClick={()=>setPlanIdResult(null)} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>That's not my plan — try again</button>
             </div>
           )}
@@ -1683,9 +1548,9 @@ export default function EmployerCoverageTools() {
           {!selectedPayer ? (
             <>
               <TypeaheadSearch
-                searchFn={(q) => searchPayers(q, answers.state)}
+                searchFn={(q) => searchPayers(q)}
                 placeholder="Start typing your employer or carrier name..."
-                label="Search for your employer's insurance"
+                label=""
                 onSelect={(payer) => {
                   if (payer._manual) {
                     goTo(1052);
@@ -2008,10 +1873,10 @@ export default function EmployerCoverageTools() {
           {sS("Start typing and we'll find carriers that match.")}
 
           <TypeaheadSearch
-            searchFn={(q) => searchPayers(q, answers.state)}
+            searchFn={(q) => searchPayers(q)}
             placeholder="Start typing carrier name..."
-            label="Search for your insurance carrier"
-            onSelect={(plan)=>{if(plan._manual){goTo(2);return;}setMatchedPlan(plan);goTo(18)}}
+            label=""
+            onSelect={(plan)=>{if(plan._manual){goTo(2);return;}setMatchedPlan({planName:plan.carrier||plan.planName,carrier:plan.carrier||plan.planName,payerId:plan.payerId});setSelectedPayer(plan);handleMedRec(answers.preference||"similar")}}
             renderResult={(p)=>(
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 {p.avatarUrl ? (
@@ -2315,7 +2180,7 @@ export default function EmployerCoverageTools() {
                 <div style={{fontFamily:heading,fontSize:16,fontWeight:800,color:TEXT_DARK,marginBottom:4}}>{planIdResult.carrierName || planIdResult.planName}</div>
                 <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Subscriber: {planIdResult.subscriberName}</div><div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>Member ID: {planIdResult.memberId}</div>
               </div>
-              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right — show my plan →</button>
+              <button onClick={()=>{setInsuranceCardData(planIdResult);goTo(343)}} style={{width:"100%",background:GREEN,color:"#fff",border:"none",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>That's right →</button>
               <button onClick={()=>setPlanIdResult(null)} style={{display:"block",width:"100%",marginTop:12,background:"none",border:"none",color:TEXT_MED,padding:"10px",fontSize:13,fontWeight:600,fontFamily:heading,cursor:"pointer",textAlign:"center"}}>That's not my plan — try again</button>
             </div>
           )}
@@ -2365,7 +2230,7 @@ export default function EmployerCoverageTools() {
           </>) : (
             /* Search mode */
             <div style={{animation:"fadeUp 0.3s ease"}}>
-              <TypeaheadSearch searchFn={(q) => searchPayers(q, answers.state)} placeholder="Start typing carrier name..." label="Search for your insurance carrier"
+              <TypeaheadSearch searchFn={(q) => searchPayers(q)} placeholder="Start typing carrier name..." label=""
                 onSelect={(plan)=>{if(plan._manual){goTo(1010);return;}setCobraPlanId(plan);setPlanIdMode(null)}}
                 renderResult={(p)=>(<div style={{display:"flex",alignItems:"center",gap:12}}>{p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{width:32,height:32,borderRadius:6,objectFit:"contain",background:"#f1f5f9"}}/> : <div style={{width:32,height:32,borderRadius:6,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:600}}>{(p.names?.[0] || p.planName || "?").charAt(0)}</div>}<div>{p.highlightedName ? <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}} dangerouslySetInnerHTML={{__html: p.highlightedName.replace(/<b>/g,'<mark style="background:#bbf7d0;color:#166534;padding:0 2px;border-radius:2px">').replace(/<\/b>/g,'</mark>')}} /> : <div style={{fontSize:14,fontWeight:500,color:TEXT_DARK}}>{p.names?.[0] || p.planName}</div>}<div style={{fontSize:12,color:TEXT_MED,marginTop:2}}>{p.states?.length ? p.states.join(", ") + " · " : ""}{p.coverageTypes?.length ? p.coverageTypes.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(", ") : "Medical"}</div></div></div>)}
               />
@@ -3067,9 +2932,8 @@ export default function EmployerCoverageTools() {
             countyName={countyName}
             customerCode={sunfireSession?.customerCode}
             onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(349)}}
-            onReset={()=>goTo(0)}
+            onReset={()=>goTo(105)}
             onSearchForPlan={()=>goTo(17)}
-            onManualEntry={()=>goTo(2)}
           />
         )}
 

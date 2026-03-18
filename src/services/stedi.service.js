@@ -1,162 +1,71 @@
 /**
- * Stedi MCP API Service - Handles payer search and eligibility checking
+ * Stedi Service - Handles payer search and eligibility checking via backend API
  */
 
-import axios from 'axios';
-
-// Stedi MCP Configuration
-const STEDI_MCP_URL = import.meta.env.VITE_STEDI_MCP_URL || 'https://mcp.us.stedi.com/2025-07-11/mcp';
-const STEDI_API_KEY = import.meta.env.VITE_STEDI_API_KEY;
-
-// Provider info for eligibility checks
-const PROVIDER_INFO = {
-  organizationName: "The Pocket Protector",
-  npi: "1942747480"
-};
-
-// Common Payer IDs (reference only - always search via API)
-// Medicare: CMSMCR | Aetna: 60054 | Cigna: 62308
-// UnitedHealthcare: 87726 | Humana: 61101
-
-// Mock data for development/fallback
-const MOCK_PAYER_SEARCH = {
-  payerName: "BlueCross BlueShield",
-  tradingPartnerServiceId: "BCBSIL"
-};
-
-const MOCK_ELIGIBILITY_RESULT = {
-  eligible: true,
-  status: "Active",
-  subscriberName: "PATRICK KAHN",
-  memberId: "XOX813969028",
-  groupNumber: "432872",
-  effectiveDate: "2023-01-01",
-  terminationDate: null,
-  planName: "BlueCross BlueShield PPO",
-  coverageType: "Medical",
-  benefits: {
-    deductible: { individual: "$500", family: "$1,000" },
-    outOfPocketMax: { individual: "$3,000", family: "$6,000" },
-    coinsurance: "80%"
-  }
-};
+import { railwayApi } from '../lib/axios';
 
 /**
- * Generate a 9-digit control number for Stedi requests
- * @returns {string} 9-digit control number
- */
-function generateControlNumber() {
-  return Math.floor(100000000 + Math.random() * 900000000).toString();
-}
-
-/**
- * Parse SSE response from Stedi MCP
- * @param {string} responseText - Raw SSE response
- * @returns {Object} Parsed data
- */
-function parseSSEResponse(responseText) {
-  const lines = responseText.split('\n');
-  let data = null;
-
-  for (const line of lines) {
-    if (line.startsWith('data:')) {
-      const jsonStr = line.slice(5).trim();
-      if (jsonStr) {
-        try {
-          data = JSON.parse(jsonStr);
-        } catch (e) {
-          console.warn('Failed to parse SSE line:', jsonStr);
-        }
-      }
-    }
-  }
-
-  return data;
-}
-
-/**
- * Make a JSON-RPC request to Stedi MCP
- * @param {string} method - RPC method name
- * @param {Object} params - RPC parameters
- * @returns {Promise<Object>} Response data
- */
-async function stediRpcCall(method, params) {
-  const payload = {
-    jsonrpc: "2.0",
-    id: Date.now(),
-    method,
-    params
-  };
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream'
-  };
-
-  if (STEDI_API_KEY) {
-    headers['Authorization'] = `Key ${STEDI_API_KEY}`;
-  }
-
-  const response = await axios.post(STEDI_MCP_URL, payload, {
-    headers,
-    timeout: 60000,
-    responseType: 'text'
-  });
-
-  // Handle SSE response format
-  const data = parseSSEResponse(response.data);
-
-  if (data?.error) {
-    throw new Error(data.error.message || 'Stedi API error');
-  }
-
-  return data?.result || data;
-}
-
-/**
- * Search for a payer by carrier name
+ * Search for a payer by carrier name (returns first match)
  * @param {string} carrierName - Name of the insurance carrier
  * @returns {Promise<Object>} Payer info with tradingPartnerServiceId
  */
 export async function searchPayer(carrierName) {
   try {
-    const result = await stediRpcCall('tools/call', {
-      name: 'search_for_payer',
-      arguments: {
-        query: carrierName,
-        eligibilityCheck: 'SUPPORTED'
-      }
+    const response = await railwayApi.get('/payers/search', {
+      params: { query: carrierName, eligibilityCheck: 'SUPPORTED' }
     });
 
-    // Extract payer info from result
-    const content = result?.content?.[0];
-    if (content?.type === 'text' && content?.text) {
-      try {
-        const data = JSON.parse(content.text);
-        // Response structure: { items: [{ payer: { primaryPayerId, displayName, ... } }] }
-        if (data?.items && data.items.length > 0) {
-          const payer = data.items[0].payer;
-          return {
-            payerName: payer.displayName || payer.name,
-            tradingPartnerServiceId: payer.primaryPayerId
-          };
-        }
-      } catch (e) {
-        console.warn('Failed to parse payer search result:', e);
-      }
+    const items = response.data?.items || [];
+    if (items.length > 0) {
+      const payer = items[0].payer;
+      return {
+        payerName: payer.displayName || payer.name,
+        tradingPartnerServiceId: payer.primaryPayerId
+      };
     }
 
     throw new Error('No payer found');
   } catch (error) {
-    console.warn('Payer search API failed, using mock data:', error.message);
-    // Return mock data after simulated delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return MOCK_PAYER_SEARCH;
+    console.error('Payer search failed:', error.message);
+    throw new Error(`Could not find insurance payer "${carrierName}". Please check the carrier name and try again.`);
   }
 }
 
 /**
- * Check eligibility for a subscriber
+ * Search for payers by carrier name (returns all matches for typeahead)
+ * @param {string} query - Search query (carrier name)
+ * @returns {Promise<Array>} Array of payer results
+ */
+export async function searchPayers(query) {
+  if (!query || query.trim().length < 2) {
+    return [];
+  }
+
+  try {
+    const response = await railwayApi.get('/payers/search', {
+      params: { query: query.trim(), eligibilityCheck: 'SUPPORTED' }
+    });
+
+    const items = response.data?.items || [];
+    return items.map((item) => ({
+      id: item.payer.stediId,
+      planName: item.payer.displayName,
+      carrier: item.payer.displayName,
+      payerId: item.payer.primaryPayerId,
+      names: item.payer.names || [],
+      coverageTypes: item.payer.coverageTypes || [],
+      states: item.payer.operatingStates || [],
+      avatarUrl: item.payer.avatarUrl || null,
+      highlightedName: item.matches?.names?.[0] || item.matches?.displayName || null
+    }));
+  } catch (error) {
+    console.error('Payer search failed:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Check eligibility for a subscriber via backend
  * @param {Object} params - Eligibility check parameters
  * @param {string} params.tradingPartnerServiceId - Payer service ID
  * @param {string} params.memberId - Subscriber's member ID
@@ -167,88 +76,68 @@ export async function searchPayer(carrierName) {
  */
 export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth }) {
   try {
-    const result = await stediRpcCall('tools/call', {
-      name: 'eligibility_check',
-      arguments: {
-        controlNumber: generateControlNumber(),
-        tradingPartnerServiceId,
-        provider: PROVIDER_INFO,
-        subscriber: {
-          memberId,
-          firstName,
-          lastName,
-          dateOfBirth
-        }
-      }
+    const response = await railwayApi.post('/stedi-mcp/agent/check', {
+      externalPatientId: memberId,
+      firstName,
+      lastName,
+      dateOfBirth,
+      serviceTypeCodes: ['30']
     });
 
-    // Extract eligibility info from result
-    const content = result?.content?.[0];
-    if (content?.type === 'text' && content?.text) {
-      try {
-        const eligibility = JSON.parse(content.text);
-
-        // Check for errors in the response
-        if (eligibility.errors && eligibility.errors.length > 0) {
-          const error = eligibility.errors[0];
-          console.warn('Eligibility check returned error:', error);
-          return {
-            eligible: false,
-            status: 'Error',
-            error: error.description,
-            errorCode: error.code,
-            subscriberName: `${firstName} ${lastName}`,
-            memberId,
-            payerName: eligibility.payer?.name,
-            raw: eligibility
-          };
-        }
-
-        // Check for plan status (successful response)
-        // planStatus can be an array: [{ status: "Active Coverage", statusCode: "1", planDetails: "..." }]
-        const planStatusArray = eligibility.planStatus || [];
-        const hasActivePlan = planStatusArray.some(p =>
-          p.status === 'Active Coverage' || p.statusCode === '1'
-        );
-
-        // Extract plan details from planStatus
-        const activePlan = planStatusArray.find(p => p.status === 'Active Coverage' || p.statusCode === '1');
-        const planDetails = activePlan?.planDetails || eligibility.payer?.name;
-
-        // Get subscriber info from response
-        const subscriberInfo = eligibility.subscriber || {};
-
-        return {
-          eligible: hasActivePlan,
-          status: hasActivePlan ? 'Active' : 'Inactive',
-          subscriberName: subscriberInfo.firstName && subscriberInfo.lastName
-            ? `${subscriberInfo.firstName} ${subscriberInfo.lastName}`
-            : `${firstName} ${lastName}`,
-          memberId: subscriberInfo.memberId || memberId,
-          groupNumber: subscriberInfo.groupNumber || eligibility.planInformation?.groupNumber,
-          groupDescription: subscriberInfo.groupDescription || eligibility.planInformation?.groupDescription,
-          effectiveDate: eligibility.planDateInformation?.planBegin,
-          terminationDate: eligibility.planDateInformation?.planEnd,
-          planName: planDetails,
-          payerName: eligibility.payer?.name,
-          coverageType: activePlan?.serviceTypes?.[0] || 'Medical',
-          address: subscriberInfo.address,
-          benefits: eligibility.benefitsInformation || [],
-          raw: eligibility
-        };
-      } catch (e) {
-        console.warn('Failed to parse eligibility result:', e);
-      }
+    const eligibility = response.data?.response;
+    if (!eligibility) {
+      throw new Error('Invalid eligibility response');
     }
 
-    throw new Error('Invalid eligibility response');
+    // Check for errors in the response
+    if (eligibility.errors && eligibility.errors.length > 0) {
+      const error = eligibility.errors[0];
+      console.warn('Eligibility check returned error:', error);
+      return {
+        eligible: false,
+        status: 'Error',
+        error: error.description,
+        errorCode: error.code,
+        subscriberName: `${firstName} ${lastName}`,
+        memberId,
+        payerName: eligibility.payer?.name,
+        raw: eligibility
+      };
+    }
+
+    // Check for plan status (successful response)
+    const planStatusArray = eligibility.planStatus || [];
+    const hasActivePlan = planStatusArray.some(p =>
+      p.status === 'Active Coverage' || p.statusCode === '1'
+    );
+
+    const activePlan = planStatusArray.find(p => p.status === 'Active Coverage' || p.statusCode === '1');
+    const planDetails = activePlan?.planDetails || eligibility.payer?.name;
+
+    const subscriberInfo = eligibility.subscriber || {};
+
+    return {
+      eligible: hasActivePlan,
+      status: hasActivePlan ? 'Active' : 'Inactive',
+      subscriberName: subscriberInfo.firstName && subscriberInfo.lastName
+        ? `${subscriberInfo.firstName} ${subscriberInfo.lastName}`
+        : `${firstName} ${lastName}`,
+      memberId: subscriberInfo.memberId || memberId,
+      groupNumber: subscriberInfo.groupNumber || eligibility.planInformation?.groupNumber,
+      groupDescription: subscriberInfo.groupDescription || eligibility.planInformation?.groupDescription,
+      effectiveDate: eligibility.planDateInformation?.planBegin,
+      terminationDate: eligibility.planDateInformation?.planEnd,
+      planName: planDetails,
+      payerName: eligibility.payer?.name,
+      coverageType: activePlan?.serviceTypes?.[0] || 'Medical',
+      address: subscriberInfo.address,
+      benefits: eligibility.benefitsInformation || [],
+      raw: eligibility
+    };
   } catch (error) {
     console.error('Eligibility check failed:', error);
     console.error('Request was:', { tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth });
-    // Return mock data for development (remove in production)
-    console.warn('Using mock eligibility data for development');
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return MOCK_ELIGIBILITY_RESULT;
+    throw new Error('Eligibility check failed. Please verify your information and try again.');
   }
 }
 
