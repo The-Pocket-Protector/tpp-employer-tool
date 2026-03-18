@@ -3,7 +3,7 @@
  * Uses the backend MCP endpoint to avoid CORS issues
  */
 
-import { railwayApi } from '../lib/axios';
+import { sunfireApi } from '../lib/axios';
 
 /**
  * Base NPI search function - calls the backend API
@@ -17,7 +17,7 @@ async function npiSearch({
   limit = 50
 }) {
   try {
-    const response = await railwayApi.post('/npi/search', {
+    const response = await sunfireApi.post('/npi/search', {
       first_name,
       last_name,
       specialty,

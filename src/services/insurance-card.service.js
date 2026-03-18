@@ -2,7 +2,7 @@
  * Insurance Card Service - Handles generic insurance card extraction
  */
 
-import { railwayApi, handleApiError } from '../lib/axios';
+import { sunfireApi, handleApiError } from '../lib/axios';
 
 
 /**
@@ -15,7 +15,7 @@ export async function extractInsuranceCard(file) {
     const form = new FormData();
     form.append('file', file, 'insurance-card.jpg');
 
-    const response = await railwayApi.post('/medicard/extract', form, {
+    const response = await sunfireApi.post('/medicard/extract', form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
 
