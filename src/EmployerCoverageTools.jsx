@@ -2918,8 +2918,8 @@ export default function EmployerCoverageTools() {
         );})()}
 
 
-        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-346) ═══ */}
-        {step>=340&&step<=346&&(
+        {/* ═══ ELIGIBILITY CHECK FLOW (steps 340-347) ═══ */}
+        {step>=340&&step<=347&&(
           <EligibilityCheckStep
             currentStep={step}
             goToStep={goTo}

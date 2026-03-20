@@ -74,15 +74,29 @@ export async function searchPayers(query) {
  * @param {string} params.dateOfBirth - Date of birth in YYYYMMDD format
  * @returns {Promise<Object>} Eligibility result
  */
-export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth }) {
+export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth, ssn }) {
   try {
-    const response = await sunfireApi.post('/stedi-mcp/agent/check', {
+    // Convert YYYYMMDD to YYYY-MM-DD if needed (backend handles both formats)
+    let dob = dateOfBirth;
+    if (/^\d{8}$/.test(dob)) {
+      dob = `${dob.slice(0, 4)}-${dob.slice(4, 6)}-${dob.slice(6, 8)}`;
+    }
+
+    const payload = {
       externalPatientId: memberId,
       firstName,
       lastName,
-      dateOfBirth,
+      dateOfBirth: dob,
+      tradingPartnerServiceId,
       serviceTypeCodes: ['30']
-    });
+    };
+
+    // Include SSN if provided
+    if (ssn) {
+      payload.ssn = ssn;
+    }
+
+    const response = await sunfireApi.post('/stedi-mcp/agent/check', payload);
 
     const eligibility = response.data?.response;
     if (!eligibility) {
@@ -149,9 +163,10 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
  * @param {string} cardData.subscriberName - Subscriber name from card
  * @param {string} cardData.groupNumber - Group number (optional)
  * @param {string} dateOfBirth - Date of birth in YYYYMMDD format
+ * @param {string} [ssn] - Social Security Number (optional)
  * @returns {Promise<Object>} Combined result with payer and eligibility info
  */
-export async function performEligibilityCheck(cardData, dateOfBirth) {
+export async function performEligibilityCheck(cardData, dateOfBirth, ssn) {
   // Parse subscriber name into first/last
   const nameParts = (cardData.subscriberName || '').trim().split(/\s+/);
   const firstName = nameParts[0] || '';
@@ -166,7 +181,8 @@ export async function performEligibilityCheck(cardData, dateOfBirth) {
     memberId: cardData.memberId,
     firstName: firstName.toUpperCase(),
     lastName: lastName.toUpperCase(),
-    dateOfBirth
+    dateOfBirth,
+    ssn
   });
 
   return {
