@@ -137,7 +137,7 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
         ? `${subscriberInfo.firstName} ${subscriberInfo.lastName}`
         : `${firstName} ${lastName}`,
       memberId: subscriberInfo.memberId || memberId,
-      groupNumber: subscriberInfo.groupNumber || eligibility.planInformation?.groupNumber,
+      groupNumber: (subscriberInfo.groupNumber || eligibility.planInformation?.groupNumber || '').replace(/_\d{2,3}$/, ''),
       groupDescription: subscriberInfo.groupDescription || eligibility.planInformation?.groupDescription,
       effectiveDate: eligibility.planDateInformation?.planBegin,
       terminationDate: eligibility.planDateInformation?.planEnd,
