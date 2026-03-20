@@ -35,12 +35,26 @@ export async function extractInsuranceCard(file) {
       raw: data
     };
 
-    // Validate required fields are present
-    if (!extracted.carrierName || !extracted.memberId || !extracted.subscriberName) {
-      console.error('Card extraction missing required fields:', {
-        hasCarrier: !!extracted.carrierName,
-        hasMemberId: !!extracted.memberId,
-        hasSubscriber: !!extracted.subscriberName
+    // Validate extracted data - need at least a name, and either a member ID or carrier
+    // This mirrors tpp-emily-2's approach: flexible enough for any insurance card type
+    const hasName = Boolean(extracted.subscriberName);
+    const hasMemberId = Boolean(extracted.memberId);
+    const hasCarrier = Boolean(extracted.carrierName);
+
+    if (!hasName) {
+      console.error('Card extraction missing subscriber name:', {
+        hasCarrier,
+        hasMemberId,
+        hasName
+      });
+      throw new Error('Could not read card details. Please try again with a clearer photo.');
+    }
+
+    if (!hasMemberId && !hasCarrier) {
+      console.error('Card extraction missing both member ID and carrier:', {
+        hasCarrier,
+        hasMemberId,
+        hasName
       });
       throw new Error('Could not read card details. Please try again with a clearer photo.');
     }
@@ -58,8 +72,15 @@ export async function extractInsuranceCard(file) {
  * @returns {Object} Validation result with isValid and missingFields
  */
 export function validateCardData(cardData) {
-  const requiredFields = ['carrierName', 'memberId', 'subscriberName'];
-  const missingFields = requiredFields.filter(field => !cardData[field]);
+  const missingFields = [];
+
+  // Name is always required
+  if (!cardData.subscriberName) missingFields.push('subscriberName');
+
+  // Need at least one of: memberId or carrierName
+  if (!cardData.memberId && !cardData.carrierName) {
+    missingFields.push('memberId or carrierName');
+  }
 
   return {
     isValid: missingFields.length === 0,

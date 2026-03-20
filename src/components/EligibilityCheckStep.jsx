@@ -1,7 +1,7 @@
 /**
  * EligibilityCheckStep - Multi-step insurance eligibility check flow
  * Uses Stedi MCP for payer search and eligibility verification
- * Steps 340-346: Instructions -> Camera -> Extracting -> DOB -> Checking -> Success -> Failure
+ * Steps 340-347: Instructions -> Camera -> Extracting -> DOB -> SSN -> Checking -> Success -> Failure
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -49,21 +49,29 @@ export default function EligibilityCheckStep({
   onSearchForPlan
 }) {
   const [localPreviewUrl, setLocalPreviewUrl] = useState(null);
-  const [, setDateOfBirth] = useState(null); // DOB stored for eligibility flow
+  const [dateOfBirth, setDateOfBirth] = useState(null); // DOB stored for eligibility flow
+  const [ssn, setSsn] = useState(''); // SSN input
   const [error, setError] = useState(null);
   const [hasAttempted, setHasAttempted] = useState(false);
 
   // Check if extracted card data has meaningful information
+  // Mirrors tpp-emily-2 approach: need a name, and at least a member ID or carrier
   const isCardDataValid = (data) => {
     if (!data) return false;
-    // Check if at least carrier name and member ID or subscriber name are present
-    const hasCarrier = data.carrierName && data.carrierName.trim() !== '';
-    const hasMemberId = data.identificationNumber && data.identificationNumber.trim() !== '';
-    const hasSubscriber = (data.subscriberName && data.subscriberName.trim() !== '') ||
-                          (data.firstName && data.firstName.trim() !== '') ||
-                          (data.fullName && data.fullName.trim() !== '');
-    // Need at least carrier OR (member ID and subscriber info) to proceed
-    return hasCarrier || (hasMemberId && hasSubscriber);
+    const hasName = Boolean(
+      (data.subscriberName && data.subscriberName.trim()) ||
+      (data.firstName && data.firstName.trim()) ||
+      (data.fullName && data.fullName.trim())
+    );
+    const hasMemberId = Boolean(
+      (data.memberId && data.memberId.trim()) ||
+      (data.identificationNumber && data.identificationNumber.trim()) ||
+      (data.medicareNumber && data.medicareNumber.trim())
+    );
+    const hasCarrier = Boolean(data.carrierName && data.carrierName.trim());
+
+    // Need a name, plus at least one identifier (member ID or carrier)
+    return hasName && (hasMemberId || hasCarrier);
   };
 
   // Handle capture and extraction
@@ -109,13 +117,44 @@ export default function EligibilityCheckStep({
     active: currentStep === 341
   });
 
-  // Handle DOB submission and eligibility check
-  const handleDOBSubmit = useCallback(async (dob) => {
+  // Handle DOB submission - skip SSN if identificationNumber already present
+  const handleDOBSubmit = useCallback((dob) => {
     setDateOfBirth(dob);
+    // If the card already has a memberId/identificationNumber, skip SSN input
+    if (cardData?.memberId || cardData?.identificationNumber) {
+      // Go straight to eligibility check (step 344) using memberId as SSN
+      goToStep(344);
+      // Trigger eligibility check immediately
+      (async () => {
+        try {
+          const result = await performEligibilityCheck(cardData, dob, undefined);
+          setEligibilityResult(result);
+          if (result.eligibility?.eligible) {
+            goToStep(345); // Success
+          } else {
+            const apiError = result.eligibility?.error;
+            setError(apiError || 'Your insurance could not be verified as active.');
+            setHasAttempted(true);
+            goToStep(346); // Failure
+          }
+        } catch (err) {
+          console.error('Eligibility check failed:', err);
+          setError(err.message);
+          setHasAttempted(true);
+          goToStep(346); // Failure
+        }
+      })();
+    } else {
+      goToStep(347); // SSN input needed
+    }
+  }, [goToStep, cardData, setEligibilityResult]);
+
+  // Handle SSN submission and trigger eligibility check
+  const handleSSNSubmit = useCallback(async () => {
     goToStep(344); // Checking eligibility
 
     try {
-      const result = await performEligibilityCheck(cardData, dob);
+      const result = await performEligibilityCheck(cardData, dateOfBirth, ssn || undefined);
       setEligibilityResult(result);
 
       if (result.eligibility?.eligible) {
@@ -133,13 +172,14 @@ export default function EligibilityCheckStep({
       setHasAttempted(true);
       goToStep(346); // Failure
     }
-  }, [cardData, goToStep, setEligibilityResult]);
+  }, [cardData, dateOfBirth, ssn, goToStep, setEligibilityResult]);
 
   // Handle retake photo
   const handleRetake = useCallback(() => {
     setCardData(null);
     setLocalPreviewUrl(null);
     setDateOfBirth(null);
+    setSsn('');
     setEligibilityResult(null);
     setError(null);
     resetCamera();
@@ -446,6 +486,130 @@ export default function EligibilityCheckStep({
     );
   }
 
+  // Step 347: SSN Input
+  if (currentStep === 347) {
+    const ssnInputStyle = {
+      width: '100%',
+      padding: '14px 16px',
+      border: `2px solid ${BORDER}`,
+      borderRadius: 10,
+      fontSize: 20,
+      fontWeight: 600,
+      fontFamily: heading,
+      color: TEXT_DARK,
+      textAlign: 'center',
+      outline: 'none',
+      transition: 'border-color 0.15s',
+      letterSpacing: '0.1em'
+    };
+
+    return (
+      <div style={{ animation: 'fadeUp 0.35s ease' }}>
+        <div style={{
+          fontSize: 13,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: TEXT_LIGHT,
+          marginBottom: 8,
+          fontFamily: heading
+        }}>
+          Social Security Number
+        </div>
+
+        <div style={{
+          fontFamily: heading,
+          fontSize: 24,
+          fontWeight: 800,
+          color: TEXT_DARK,
+          marginBottom: 8
+        }}>
+          Enter your SSN
+        </div>
+
+        <div style={{
+          fontSize: 15,
+          color: TEXT_MED,
+          lineHeight: 1.6,
+          marginBottom: 24,
+          fontFamily: body
+        }}>
+          Your SSN is needed to verify your identity with your insurance carrier. This information is securely transmitted and not stored.
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{
+            display: 'block',
+            fontSize: 12,
+            fontWeight: 600,
+            color: TEXT_MED,
+            marginBottom: 6,
+            fontFamily: body
+          }}>
+            SSN (last 4 or full)
+          </label>
+          <input
+            type="password"
+            inputMode="numeric"
+            placeholder="XXX-XX-XXXX"
+            value={ssn}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+              setSsn(val);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && ssn.length >= 4) {
+                handleSSNSubmit();
+              }
+            }}
+            style={ssnInputStyle}
+            maxLength={11}
+            autoFocus
+          />
+        </div>
+
+        <button
+          onClick={handleSSNSubmit}
+          disabled={ssn.length < 4}
+          style={{
+            width: '100%',
+            padding: '16px 28px',
+            background: ssn.length < 4 ? BORDER : GREEN,
+            border: 'none',
+            borderRadius: 12,
+            fontSize: 16,
+            fontWeight: 700,
+            color: ssn.length < 4 ? TEXT_LIGHT : '#fff',
+            fontFamily: heading,
+            cursor: ssn.length < 4 ? 'not-allowed' : 'pointer',
+            transition: 'all 0.15s'
+          }}
+        >
+          Check Eligibility
+        </button>
+
+        <button
+          onClick={() => goToStep(343)}
+          style={{
+            width: '100%',
+            marginTop: 12,
+            background: 'none',
+            border: 'none',
+            color: TEXT_MED,
+            padding: '10px',
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: heading,
+            cursor: 'pointer',
+            textAlign: 'center'
+          }}
+        >
+          ← Back
+        </button>
+      </div>
+    );
+  }
+
   // Step 344: Checking Eligibility (Loading)
   if (currentStep === 344) {
     return (
@@ -615,26 +779,6 @@ export default function EligibilityCheckStep({
               </div>
             )}
 
-            {eligibility.benefits && Object.keys(eligibility.benefits).length > 0 && (
-              <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1px solid ${GREEN_BORDER}` }}>
-                <div style={{ fontSize: 12, color: TEXT_LIGHT, fontFamily: body, marginBottom: 8 }}>Benefits</div>
-                {eligibility.benefits.deductible && (
-                  <div style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body, marginBottom: 4 }}>
-                    <strong>Deductible:</strong> {eligibility.benefits.deductible.individual || eligibility.benefits.deductible}
-                  </div>
-                )}
-                {eligibility.benefits.outOfPocketMax && (
-                  <div style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body, marginBottom: 4 }}>
-                    <strong>Out-of-Pocket Max:</strong> {eligibility.benefits.outOfPocketMax.individual || eligibility.benefits.outOfPocketMax}
-                  </div>
-                )}
-                {eligibility.benefits.coinsurance && (
-                  <div style={{ fontSize: 14, color: TEXT_DARK, fontFamily: body }}>
-                    <strong>Coinsurance:</strong> {eligibility.benefits.coinsurance}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 

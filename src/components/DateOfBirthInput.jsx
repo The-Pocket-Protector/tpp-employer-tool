@@ -264,7 +264,7 @@ export default function DateOfBirthInput({ onSubmit, onBack, subscriberName }) {
           transition: 'all 0.15s'
         }}
       >
-        Check Eligibility
+        Continue
       </button>
 
       {/* Back button */}
