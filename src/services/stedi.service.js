@@ -1,8 +1,41 @@
 /**
  * Stedi Service - Handles payer search and eligibility checking via backend API
+ * Includes special Medicare/MBI handling per Stedi docs:
+ * - MBILU: MBI lookup using SSN (preferred when SSN available)
+ * - MBILUNOSSN: MBI lookup without SSN (requires subscriber state)
  */
 
 import { sunfireApi } from '../lib/axios';
+
+/**
+ * Detect if a member ID is a Medicare Beneficiary Identifier (MBI)
+ * MBI format: 11 chars (no dashes), pattern: C(AN)AANAAANAA
+ * where C=numeric(1-9), A=alpha(A-Z excl S,L,O,I,B,Z), N=numeric(0-9), AN=alphanumeric
+ * Cards show it with dashes: e.g. 5UR4-EM5-WA82
+ */
+export function isMBI(memberId) {
+  if (!memberId) return false;
+  const stripped = memberId.replace(/[-\s]/g, '').toUpperCase();
+  if (stripped.length !== 11) return false;
+  // CMS MBI format: C A AN N A AN N A A N N
+  // C=1-9, A=alpha (excl S,L,O,I,B,Z), N=0-9, AN=alphanumeric (excl S,L,O,I,B,Z)
+  const A = '[AC-HJ-KM-NP-RT-Y]';
+  const AN = '[0-9AC-HJ-KM-NP-RT-Y]';
+  const pattern = new RegExp(`^[1-9]${A}${AN}\\d${A}${AN}\\d${A}${A}\\d\\d$`);
+  return pattern.test(stripped);
+}
+
+/**
+ * Detect if the scanned card is a Medicare card
+ */
+export function isMedicareCard(cardData) {
+  if (!cardData) return false;
+  const carrier = (cardData.carrierName || '').toLowerCase();
+  if (carrier.includes('medicare') || carrier.includes('cms')) return true;
+  if (cardData.raw?.medicareNumber || cardData.medicareNumber) return true;
+  if (isMBI(cardData.memberId)) return true;
+  return false;
+}
 
 /**
  * Search for a payer by carrier name (returns first match)
@@ -74,7 +107,7 @@ export async function searchPayers(query) {
  * @param {string} params.dateOfBirth - Date of birth in YYYYMMDD format
  * @returns {Promise<Object>} Eligibility result
  */
-export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth, ssn }) {
+export async function checkEligibility({ tradingPartnerServiceId, memberId, firstName, lastName, dateOfBirth, ssn, state }) {
   try {
     // Convert YYYYMMDD to YYYY-MM-DD if needed (backend handles both formats)
     let dob = dateOfBirth;
@@ -94,6 +127,11 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
     // Include SSN if provided
     if (ssn) {
       payload.ssn = ssn;
+    }
+
+    // Include state if provided (required for MBILUNOSSN)
+    if (state) {
+      payload.state = state;
     }
 
     const response = await sunfireApi.post('/stedi-mcp/agent/check', payload);
@@ -157,6 +195,7 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
 
 /**
  * Perform full eligibility check flow (payer search + eligibility check)
+ * For Medicare cards, bypasses payer search and uses Stedi's CMS/MBILU/MBILUNOSSN payer IDs directly.
  * @param {Object} cardData - Extracted card data
  * @param {string} cardData.carrierName - Insurance carrier name
  * @param {string} cardData.memberId - Member ID from card
@@ -168,14 +207,19 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
  */
 export async function performEligibilityCheck(cardData, dateOfBirth, ssn) {
   // Parse subscriber name into first/last
+  // For names like "CATHLEEN A WALD", first=CATHLEEN, last=WALD (skip middle initial)
   const nameParts = (cardData.subscriberName || '').trim().split(/\s+/);
   const firstName = nameParts[0] || '';
-  const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
+  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || '';
 
-  // Search for payer
+  // Medicare cards get special handling - no payer search needed
+  if (isMedicareCard(cardData)) {
+    return performMedicareEligibilityCheck(cardData, dateOfBirth, ssn, firstName, lastName);
+  }
+
+  // Non-Medicare: search for payer, then check eligibility
   const payerInfo = await searchPayer(cardData.carrierName);
 
-  // Check eligibility
   const eligibilityResult = await checkEligibility({
     tradingPartnerServiceId: payerInfo.tradingPartnerServiceId,
     memberId: cardData.memberId,
@@ -189,5 +233,61 @@ export async function performEligibilityCheck(cardData, dateOfBirth, ssn) {
     payer: payerInfo,
     eligibility: eligibilityResult,
     cardData
+  };
+}
+
+/**
+ * Medicare-specific eligibility check using Stedi's MBI lookup payer IDs
+ * Strategy:
+ * 1. If SSN available → use "MBILU" (MBI lookup via SSN, most reliable)
+ * 2. If no SSN but state available → use "MBILUNOSSN" (MBI lookup via demographics)
+ * 3. If neither SSN nor state → throw error (cannot verify without at least one)
+ */
+async function performMedicareEligibilityCheck(cardData, dateOfBirth, ssn, firstName, lastName) {
+  // MBI can be in memberId, medicareNumber, or identificationNumber
+  const rawMBI = cardData.memberId || cardData.medicareNumber || cardData.identificationNumber;
+  const mbi = rawMBI ? rawMBI.replace(/[-\s]/g, '') : null;
+  const hasMBI = mbi && isMBI(rawMBI);
+
+  let tradingPartnerServiceId;
+  let memberId;
+
+  const hasState = !!(cardData.state);
+
+  if (ssn) {
+    // SSN available - use MBILU (most reliable)
+    tradingPartnerServiceId = 'MBILU';
+    memberId = hasMBI ? mbi : undefined;
+  } else if (hasState) {
+    // No SSN but have state - use MBILUNOSSN
+    tradingPartnerServiceId = 'MBILUNOSSN';
+    memberId = hasMBI ? mbi : undefined;
+  } else {
+    throw new Error('Medicare eligibility check requires either SSN or subscriber state.');
+  }
+
+  const payerInfo = {
+    payerName: 'Medicare',
+    tradingPartnerServiceId
+  };
+
+  const eligibilityResult = await checkEligibility({
+    tradingPartnerServiceId,
+    memberId,
+    firstName: firstName.toUpperCase(),
+    lastName: lastName.toUpperCase(),
+    dateOfBirth,
+    ssn,
+    state: cardData.state || undefined,
+  });
+
+  // If the response includes a resolved MBI, include it in the result
+  const resolvedMBI = (!hasMBI && eligibilityResult.memberId) ? eligibilityResult.memberId : mbi;
+
+  return {
+    payer: payerInfo,
+    eligibility: eligibilityResult,
+    cardData,
+    resolvedMBI
   };
 }
