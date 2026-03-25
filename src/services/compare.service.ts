@@ -13,7 +13,7 @@ import { tppApi, createApiInstance } from '@/lib/axios';
 
 // --- Compare session API (tpp-backend) ---
 
-const RAILWAY_API_URL = import.meta.env.VITE_RAILWAY_API_URL || 'https://tpp-api-552708311807.us-central1.run.app/api';
+const RAILWAY_API_URL = import.meta.env.VITE_RAILWAY_API_URL || '/api';
 const compareApi = createApiInstance(RAILWAY_API_URL);
 
 interface CompareSessionResponse {
