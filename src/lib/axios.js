@@ -11,8 +11,11 @@ const SECOND_IN_MILLISECONDS = 1000;
 const MINUTE_IN_MILLISECONDS = 60 * SECOND_IN_MILLISECONDS;
 const AXIOS_TIMEOUT = MINUTE_IN_MILLISECONDS * 10;
 
+const TPP_API_URL = import.meta.env.VITE_TPP_API_URL || 'https://tpp-api-552708311807.us-central1.run.app/api';
+
 export const API_ENDPOINTS = {
   BASE: API_BASE_URL,
+  TPP: TPP_API_URL,
   PVERIFY: import.meta.env.VITE_PVERIFY_API_URL || '',
   MBI: 'https://prod-chatbot.thepocketprotector.com'
 };
@@ -117,6 +120,7 @@ export const createApiInstance = (baseURL, config = {}) => {
 // Service-specific axios instances
 // Note: sunfireApi is the primary API for Sunfire/Medicare operations
 export const sunfireApi = createApiInstance(API_ENDPOINTS.BASE);
+export const tppApi = createApiInstance(API_ENDPOINTS.TPP);
 export const mbiApi = createApiInstance(API_ENDPOINTS.MBI);
 
 /**
