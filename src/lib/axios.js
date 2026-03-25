@@ -11,7 +11,7 @@ const SECOND_IN_MILLISECONDS = 1000;
 const MINUTE_IN_MILLISECONDS = 60 * SECOND_IN_MILLISECONDS;
 const AXIOS_TIMEOUT = MINUTE_IN_MILLISECONDS * 10;
 
-const TPP_API_URL = import.meta.env.VITE_TPP_API_URL || '/api';
+const TPP_API_URL = import.meta.env.VITE_TPP_API_URL || 'https://tpp-api-552708311807.us-central1.run.app/api';
 
 export const API_ENDPOINTS = {
   BASE: API_BASE_URL,
