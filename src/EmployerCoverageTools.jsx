@@ -458,6 +458,8 @@ async function matchMAPlan(needs, doctors, prescriptions, zip, county, state, ma
       ...(matchedPlan && { current_plan: { contract_id: matchedPlan.contractId, plan_id: matchedPlan.planId } })
     });
     const rec = result?.recommendations?.[0] || {};
+    const benefits = rec.key_benefits || [];
+    const hasBenefit = (name) => benefits.includes(name);
     return {
       plan: {
         name: rec.plan_name || 'Medicare Advantage Plan',
@@ -466,15 +468,18 @@ async function matchMAPlan(needs, doctors, prescriptions, zip, county, state, ma
         deductible: rec.deductible ?? 0,
         pcpCopay: rec.pcp_copay ?? 0,
         specCopay: rec.specialist_copay ?? 0,
-        oopMax: rec.oop_max ?? 0,
-        dental: rec.dental || null,
-        vision: rec.vision || null,
-        hearing: rec.hearing || 'None',
-        gym: rec.gym || null,
-        otc: rec.otc || null,
-        transport: rec.transportation || false,
+        oopMax: rec.moop ?? rec.oop_max ?? 0,
+        dental: hasBenefit('dental') ? 'Included' : null,
+        vision: hasBenefit('vision') ? 'Included' : null,
+        hearing: hasBenefit('hearing') ? 'Included' : 'None',
+        gym: hasBenefit('fitness') ? 'Included' : null,
+        otc: hasBenefit('otc') ? 'Included' : null,
+        transport: hasBenefit('transportation'),
         drugCoverage: rec.drug_coverage !== false,
-        outOfArea: rec.out_of_area || false,
+        outOfArea: hasBenefit('worldwide-coverage') || (rec.out_of_area || false),
+        starRating: rec.star_rating || null,
+        enrollmentUrl: rec.enrollment_url || null,
+        reasoning: rec.reasoning || '',
       },
       isDSNP: needs.medicaid === true,
       veteranPlan: needs.veteran || false,
@@ -511,7 +516,7 @@ async function searchDoctorsWithZip(query, zipCode) {
       specialty: Array.isArray(p.specialties) ? p.specialties.join(', ') : (p.specialties || p.specialty || ''),
       city: p.city || '',
       state: p.state || '',
-      address: [p.address1 || p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
+      address: [p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
     }));
   } catch (error) {
     console.error('Doctor search error:', error);
@@ -529,8 +534,7 @@ async function searchDoctors(query) {
 async function searchDrugs(query) {
   if (query.length < 2) return [];
   try {
-    const results = await tppSearchDrugs(query, 8);
-    const drugs = Array.isArray(results) ? results : (results?.drugs || []);
+    const drugs = await tppSearchDrugs(query, 8);
     if (drugs.length > 0) {
       return drugs.slice(0, 8).map(drug => {
         const dosages = drug.dosages || [];
@@ -538,10 +542,10 @@ async function searchDrugs(query) {
           id: drug.id,
           brandName: drug.name,
           genericName: drug.genericName || '',
-          therapeuticClass: drug.therapeuticClass || '',
+          therapeuticClass: '',
           defaultDosage: dosages[0]?.strength || '',
           frequency: 'Once daily',
-          dosages: dosages.map(d => ({ id: d.id, strength: d.strength, qty: d.qty, packages: d.packages }))
+          dosages: dosages.map(d => ({ id: d.id, strength: d.strength, strengthUOM: d.strengthUOM || '', form: d.form || '', rxcui: d.rxcui || '', packages: d.packages || [] }))
         };
       });
     }
@@ -2676,12 +2680,13 @@ export default function EmployerCoverageTools() {
             {maNeeds.visitFreq==="rare"&&planResult.plan.premium===0&&<FactorCard type="info" badge="Cost" title="You don't visit the doctor often — this $0 premium plan keeps your monthly costs at zero" text="With only a few visits a year, a $0 premium plan gives you coverage without paying anything monthly."/>}
             {planResult.veteranPlan&&<FactorCard type="info" badge="Veteran" title="As a veteran, this plan includes a Part B premium giveback" text="Money is deposited back into your Social Security check each month — a benefit specifically available to veterans."/>}
             {planResult.isDSNP&&<FactorCard type="info" badge="D-SNP" title="You qualify for a Dual Special Needs Plan" text="Because you have both Medicare and Medicaid, this D-SNP plan is designed for your situation — $0 premiums, $0 copays, and extra benefits at no cost to you."/>}
-            {(maNeeds.dentalNeed==="major"||maNeeds.dentalNeed==="dentures")&&planResult.plan.dental.includes("Comprehensive")&&<FactorCard type="info" badge="Dental" title={`You need significant dental work — this plan includes ${planResult.plan.dental}`} text="This coverage goes well beyond basic cleanings, at no extra premium."/>}
+            {(maNeeds.dentalNeed==="major"||maNeeds.dentalNeed==="dentures")&&planResult.plan.dental&&<FactorCard type="info" badge="Dental" title="You need significant dental work — this plan includes dental coverage" text="This coverage goes well beyond basic cleanings, at no extra premium."/>}
             {maNeeds.secondHome===true&&planResult.plan.outOfArea&&<FactorCard type="info" badge="Coverage" title="You split time between two states — this plan covers you in both locations" text="This plan includes out-of-area coverage, so you're not limited to doctors in just one state."/>}
             {!planResult.needsMAPD&&planResult.veteranPlan&&<FactorCard type="info" badge="Rx" title="No Part D needed — your TRICARE/CHAMPVA covers prescriptions" text="Since you receive drug coverage through your military benefits, we recommended a plan without Part D to avoid duplicate coverage."/>}
 
-            <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",marginTop:24}}>Enroll in This Plan Online →</a>
+            <a href={planResult.plan.enrollmentUrl || "https://www.medicare.gov/plan-compare"} target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",marginTop:24}}>Enroll in This Plan Online →</a>
             <div style={{fontSize:13,color:TEXT_MED,textAlign:"center",marginTop:8}}>Ready to enroll? This link takes you directly to the plan.</div>
+            {planResult.plan.reasoning&&<div style={{background:BG_SUBTLE,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginTop:16}}><div style={{fontSize:13,fontWeight:600,color:TEXT_LIGHT,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>Why This Plan</div><div style={{fontSize:14,color:TEXT_MED,lineHeight:1.6}}>{planResult.plan.reasoning}</div></div>}
           </>)}
 
           {/* ── MA PLAN FALLBACK (API failed) ── */}
