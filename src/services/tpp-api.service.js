@@ -29,7 +29,23 @@ export async function lookupZipCounties(zip) {
 export async function searchPhysicians(zip, query) {
   try {
     const response = await tppApi.get('/physicians', { params: { zip, q: query } });
-    return response.data;
+    const physicians = response.data?.physicians || [];
+
+    // Normalize API shape (first_name/last_name separate) to what the UI expects (name)
+    return physicians.map(p => ({
+      npi: p.npi || '',
+      id: p.npi || '',
+      name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name || '',
+      specialty: p.specialty || '',
+      specialties: [p.specialty, p.sec_spec_1, p.sec_spec_2].filter(Boolean),
+      address: p.address || '',
+      city: p.city || '',
+      state: p.state || '',
+      zip: p.zip || '',
+      phone: p.phone || '',
+      credential: p.credential || '',
+      org_name: p.org_name || '',
+    }));
   } catch (error) {
     console.error('Physician search failed:', error.message);
     throw new Error('Physician search failed. Please try again.');
@@ -61,7 +77,31 @@ export async function searchHospitals(zip, query) {
 export async function searchDrugs(query, limit = 15) {
   try {
     const response = await tppApi.get('/drugs', { params: { q: query, limit } });
-    return response.data;
+    const raw = response.data;
+    const drugs = raw?.drugs || [];
+
+    // Normalize API shape (drug_name, dosage_options) to the shape the UI expects (name, id, dosages)
+    return drugs.map((drug, idx) => {
+      const drugName = drug.drug_name || '';
+      // Extract form from the drug name string (e.g., "ORAL TABLET", "INJECTABLE SOLUTION", "PEN INJECTOR")
+      const nameLower = drugName.toLowerCase();
+      const isInjectable = nameLower.includes('inject') || nameLower.includes('pen injector') || nameLower.includes('syringe');
+      const form = isInjectable ? 'INJ' : nameLower.includes('oral tablet') ? 'TAB' : nameLower.includes('oral capsule') ? 'CAP' : nameLower.includes('solution') ? 'SOL' : '';
+
+      return {
+        id: drug.dosage_options?.[0]?.rxcui || `drug-${idx}`,
+        name: drugName,
+        genericName: drug.is_generic === '1' ? drugName : '',
+        dosages: (drug.dosage_options || []).map(d => ({
+          id: d.rxcui || '',
+          strength: d.dosage_strength || '',
+          strengthUOM: '',
+          rxcui: d.rxcui || '',
+          form,
+          packages: [],
+        })),
+      };
+    });
   } catch (error) {
     console.error('Drug search failed:', error.message);
     throw new Error('Drug search failed. Please try again.');

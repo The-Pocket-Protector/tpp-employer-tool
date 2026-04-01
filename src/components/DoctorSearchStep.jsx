@@ -61,21 +61,9 @@ export default function DoctorSearchStep({ zipCode, selectedDoctors = [], onComp
       try {
         const results = await searchPhysicians(primaryZip, searchQuery);
 
-        // Map tpp-api response to expected shape and filter out already selected
+        // Filter out already selected (searchPhysicians already normalizes the response)
         const selectedIds = new Set(selected.map(d => d.id));
-        const mapped = (results || []).map(p => ({
-          id: p.npi || p.id,
-          name: p.name,
-          npi: p.npi || p.id,
-          specialty: p.specialty || '',
-          specialties: p.specialties || p.specialty || '',
-          city: p.city || '',
-          state: p.state || '',
-          address1: p.address1 || p.address || '',
-          phone: p.phone || '',
-          zip: p.zip || '',
-        }));
-        const filtered = mapped.filter(p => !selectedIds.has(p.id));
+        const filtered = (results || []).filter(p => !selectedIds.has(p.id));
 
         setSuggestions(filtered);
         setShowSuggestions(filtered.length > 0);
@@ -186,7 +174,6 @@ export default function DoctorSearchStep({ zipCode, selectedDoctors = [], onComp
   // Format address for display
   const formatAddress = (provider) => {
     const parts = [];
-    if (provider.address1) parts.push(provider.address1);
     if (provider.address) parts.push(provider.address);
     if (provider.city) parts.push(provider.city);
     if (provider.state) parts.push(provider.state);
