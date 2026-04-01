@@ -29,7 +29,23 @@ export async function lookupZipCounties(zip) {
 export async function searchPhysicians(zip, query) {
   try {
     const response = await tppApi.get('/physicians', { params: { zip, q: query } });
-    return response.data;
+    const physicians = response.data?.physicians || [];
+
+    // Normalize API shape (first_name/last_name separate) to what the UI expects (name)
+    return physicians.map(p => ({
+      npi: p.npi || '',
+      id: p.npi || '',
+      name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name || '',
+      specialty: p.specialty || '',
+      specialties: [p.specialty, p.sec_spec_1, p.sec_spec_2].filter(Boolean),
+      address: p.address || '',
+      city: p.city || '',
+      state: p.state || '',
+      zip: p.zip || '',
+      phone: p.phone || '',
+      credential: p.credential || '',
+      org_name: p.org_name || '',
+    }));
   } catch (error) {
     console.error('Physician search failed:', error.message);
     throw new Error('Physician search failed. Please try again.');
@@ -61,7 +77,22 @@ export async function searchHospitals(zip, query) {
 export async function searchDrugs(query, limit = 15) {
   try {
     const response = await tppApi.get('/drugs', { params: { q: query, limit } });
-    return response.data;
+    const raw = response.data;
+    const drugs = raw?.drugs || [];
+
+    // Normalize API shape (drug_name, dosage_options) to the shape the UI expects (name, id, dosages)
+    return drugs.map((drug, idx) => ({
+      id: drug.dosage_options?.[0]?.rxcui || `drug-${idx}`,
+      name: drug.drug_name || '',
+      genericName: drug.is_generic === '1' ? drug.drug_name : '',
+      dosages: (drug.dosage_options || []).map(d => ({
+        id: d.rxcui || '',
+        strength: d.dosage_strength || '',
+        rxcui: d.rxcui || '',
+        form: '',
+        packages: [],
+      })),
+    }));
   } catch (error) {
     console.error('Drug search failed:', error.message);
     throw new Error('Drug search failed. Please try again.');
