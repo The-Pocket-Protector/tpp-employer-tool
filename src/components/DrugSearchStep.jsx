@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { searchDrugsWithGenericFallback, getDrugDosages } from '../services/sunfire.service';
+import { searchDrugs as searchDrugsApi } from '../services/tpp-api.service';
 import {
   GREEN,
   GREEN_LIGHT,
@@ -20,18 +20,12 @@ import {
 /**
  * @param {Object} props
  * @param {string} props.zipCode - User's ZIP code
- * @param {string} props.county - User's county code
- * @param {string} props.countyName - User's county name
- * @param {string} [props.customerCode] - Existing Sunfire customer code
  * @param {Array} props.selectedDrugs - Already selected drugs
- * @param {function} props.onComplete - Callback with selected drugs array and customerCode
+ * @param {function} props.onComplete - Callback with selected drugs array
  * @param {function} props.onBack - Callback to go back
  */
 export default function DrugSearchStep({
   zipCode,
-  county,
-  countyName,
-  customerCode,
   selectedDrugs = [],
   onComplete,
   onBack
@@ -86,18 +80,12 @@ export default function DrugSearchStep({
       setError(null);
 
       try {
-        const result = await searchDrugsWithGenericFallback(searchQuery);
-        const drugs = result?.drugs || [];
+        const result = await searchDrugsApi(searchQuery, 15);
+        const drugs = Array.isArray(result) ? result : (result?.drugs || []);
 
-        // Filter to match query and exclude already selected
+        // Filter out already selected
         const selectedIds = new Set(selected.map(d => d.drugNameId || d.id));
-        const queryLower = searchQuery.toLowerCase();
-        const filtered = drugs.filter(drug => {
-          const matchesName = drug.name.toLowerCase().includes(queryLower);
-          const matchesGeneric = drug.genericName?.toLowerCase().includes(queryLower);
-          const notSelected = !selectedIds.has(drug.id);
-          return (matchesName || matchesGeneric) && notSelected;
-        });
+        const filtered = drugs.filter(drug => !selectedIds.has(drug.id));
 
         setSuggestions(filtered.slice(0, 15));
         setShowSuggestions(filtered.length > 0);
@@ -164,33 +152,27 @@ export default function DrugSearchStep({
     }
   }, [showSuggestions, suggestions, highlightedIndex]);
 
-  // Select a drug and load its dosages
-  const handleSelectDrug = async (drug) => {
+  // Select a drug — tpp-api returns dosages inline, no second call needed
+  const handleSelectDrug = (drug) => {
     setShowSuggestions(false);
     setHighlightedIndex(-1);
     setSearchQuery('');
-    setIsLoadingDosages(true);
     setError(null);
 
-    try {
-      const result = await getDrugDosages(parseInt(drug.id));
-      const dosageList = result?.drugDosage?.dosages || [];
+    const dosageList = drug.dosages || [];
 
-      setPendingDrug(drug);
-      setDosages(dosageList);
+    setPendingDrug(drug);
+    setDosages(dosageList);
 
-      if (dosageList.length > 0) {
-        setSelectedDosage(dosageList[0]);
-        setQuantity(dosageList[0].packages?.[0]?.pm || 30);
-        // Default to weekly for injections, daily for other forms
-        setFrequency(dosageList[0].form === 'INJ' ? 'once_weekly' : 'once_daily');
-      }
-    } catch (err) {
-      console.error('Error loading dosages:', err);
-      setError('Failed to load dosage options. Please try again.');
-      setPendingDrug(null);
-    } finally {
-      setIsLoadingDosages(false);
+    if (dosageList.length > 0) {
+      setSelectedDosage(dosageList[0]);
+      setQuantity(dosageList[0].packages?.[0]?.pm || 30);
+      setFrequency(dosageList[0].form === 'INJ' ? 'once_weekly' : 'once_daily');
+    } else {
+      // No dosage info — allow adding with defaults
+      setSelectedDosage({ id: drug.id, strength: '', strengthUOM: '', form: '', packages: [] });
+      setQuantity(30);
+      setFrequency('once_daily');
     }
   };
 
@@ -242,12 +224,12 @@ export default function DrugSearchStep({
 
   // Handle continue
   const handleContinue = () => {
-    onComplete(selected, customerCode);
+    onComplete(selected);
   };
 
   // Handle skip
   const handleSkip = () => {
-    onComplete([], customerCode);
+    onComplete([]);
   };
 
   return (
