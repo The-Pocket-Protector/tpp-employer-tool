@@ -187,6 +187,7 @@ export default function DrugSearchStep({
       drugNameId: pendingDrug.id,
       name: pendingDrug.name,
       genericName: pendingDrug.genericName || null,
+      rxcui: selectedDosage.rxcui || selectedDosage.id || '',
       strength: selectedDosage.strength || '',
       strengthUOM: selectedDosage.strengthUOM || '',
       form: selectedDosage.form || '',
