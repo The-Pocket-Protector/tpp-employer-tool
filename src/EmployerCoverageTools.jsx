@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { lookupZip, saveSession, patchSession, searchProviders, searchDrugs as searchDrugsApi, getDrugDosages, getRecommendationsV6 } from "./services/sunfire.service";
-import { getRadiusZipcodes } from "./services/zip.service";
+import { lookupZipCounties, getRecommendation, scanInsuranceCard, searchPhysicians as tppSearchPhysicians, searchDrugs as tppSearchDrugs } from "./services/tpp-api.service";
+import { loadSession, saveSession as persistSession, clearSession } from "./lib/sessionStore";
 import DoctorSearchStep from "./components/DoctorSearchStep";
 import DrugSearchStep from "./components/DrugSearchStep";
 import CardCaptureStep from "./components/CardCaptureStep";
 import InsuranceCardCapture from "./components/InsuranceCardCapture";
 import EligibilityCheckStep from "./components/EligibilityCheckStep";
-import { extractInsuranceCard } from "./services/insurance-card.service";
 import { searchPayers } from "./services/stedi.service";
 
 const GREEN = "#16a34a", GREEN_DARK = "#15803d", GREEN_LIGHT = "#f0fdf4", GREEN_BORDER = "#bbf7d0";
@@ -118,15 +117,13 @@ function generateEmployerAnalysis(data) {
 
 // ─── CARD EXTRACTION FUNCTION ───
 async function extractPlanFromCard(imageFile) {
-  const cardData = await extractInsuranceCard(imageFile);
-  // Extract the 3 main fields from the card
+  const cardData = await scanInsuranceCard(imageFile);
   return {
-    carrierName: cardData.carrierName,
-    memberId: cardData.memberId,
-    subscriberName: cardData.subscriberName,
-    // For display compatibility
-    planName: cardData.carrierName || 'Insurance Plan',
-    carrier: cardData.carrierName,
+    carrierName: cardData.carrierName || cardData.carrier || cardData.insuranceCompany || null,
+    memberId: cardData.memberId || cardData.identificationNumber || cardData.memberNumber || null,
+    subscriberName: cardData.subscriberName || cardData.memberName || cardData.fullName || null,
+    planName: cardData.carrierName || cardData.carrier || 'Insurance Plan',
+    carrier: cardData.carrierName || cardData.carrier || null,
     matched: true
   };
 }
@@ -446,16 +443,57 @@ function runGuideMatchEngine(prefs, recType) {
   return { agent: winner, reasons, appointmentNote: winner === "mike" };
 }
 
-function matchMAPlan(needs, doctors, prescriptions) {
-  // TODO: Replace with real API plan data (e.g. from getRecommendationsV6 or calculatePlans)
-  return {
-    plan: null,
-    isDSNP: needs.medicaid === true,
-    veteranPlan: needs.veteran || false,
-    needsMAPD: !(needs.veteran && needs.vaPrimaryCare === true && (needs.tricare || needs.champva)),
-    docMatch: 0,
-    rxMatch: 0
-  };
+async function matchMAPlan(needs, doctors, prescriptions, zip, county, state, matchedPlan) {
+  try {
+    const result = await getRecommendation({
+      zip,
+      county,
+      state,
+      doctors: (doctors || []).map(d => ({ npi: d.npi, name: d.name })),
+      drugs: (prescriptions || []).map(d => ({ name: d.name, rxcui: d.rxcui, dosage_strength: d.strength })),
+      medicaid: needs.medicaid === true ? 'yes' : 'no',
+      priorities: needs.dentalNeed === 'major' || needs.dentalNeed === 'dentures' ? ['dental'] : [],
+      plan_types: [],
+      ...(needs.secondHome === true && { has_second_home: true }),
+      ...(matchedPlan && { current_plan: { contract_id: matchedPlan.contractId, plan_id: matchedPlan.planId } })
+    });
+    const rec = result?.recommendations?.[0] || {};
+    return {
+      plan: {
+        name: rec.plan_name || 'Medicare Advantage Plan',
+        premium: rec.monthly_premium ?? 0,
+        type: rec.plan_type || 'HMO',
+        deductible: rec.deductible ?? 0,
+        pcpCopay: rec.pcp_copay ?? 0,
+        specCopay: rec.specialist_copay ?? 0,
+        oopMax: rec.oop_max ?? 0,
+        dental: rec.dental || null,
+        vision: rec.vision || null,
+        hearing: rec.hearing || 'None',
+        gym: rec.gym || null,
+        otc: rec.otc || null,
+        transport: rec.transportation || false,
+        drugCoverage: rec.drug_coverage !== false,
+        outOfArea: rec.out_of_area || false,
+      },
+      isDSNP: needs.medicaid === true,
+      veteranPlan: needs.veteran || false,
+      needsMAPD: !(needs.veteran && needs.vaPrimaryCare === true && (needs.tricare || needs.champva)),
+      docMatch: rec.doctors_in_network ?? 0,
+      rxMatch: rec.drugs_covered ?? 0,
+    };
+  } catch (err) {
+    console.error('matchMAPlan failed:', err);
+    // Return fallback so UI doesn't break
+    return {
+      plan: null,
+      isDSNP: needs.medicaid === true,
+      veteranPlan: needs.veteran || false,
+      needsMAPD: true,
+      docMatch: 0,
+      rxMatch: 0
+    };
+  }
 }
 
 
@@ -465,19 +503,15 @@ function matchMAPlan(needs, doctors, prescriptions) {
 async function searchDoctorsWithZip(query, zipCode) {
   if (query.length < 2) return [];
   try {
-    const results = await searchProviders({
-      provider_name: query,
-      zip_code: zipCode || '',
-      max_size: 10
-    });
+    const results = await tppSearchPhysicians(zipCode || '', query);
     return (results || []).map(p => ({
-      id: p.id,
+      id: p.npi || p.id,
       name: p.name,
       npi: p.npi || p.id,
       specialty: Array.isArray(p.specialties) ? p.specialties.join(', ') : (p.specialties || p.specialty || ''),
       city: p.city || '',
       state: p.state || '',
-      address: [p.address1, p.city, p.state, p.zip].filter(Boolean).join(', ')
+      address: [p.address1 || p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
     }));
   } catch (error) {
     console.error('Doctor search error:', error);
@@ -495,37 +529,21 @@ async function searchDoctors(query) {
 async function searchDrugs(query) {
   if (query.length < 2) return [];
   try {
-    const results = await searchDrugsApi(query, true);
-    if (results?.drugs && results.drugs.length > 0) {
-      // Get dosage info for first few drugs (avoid too many API calls)
-      const drugsWithDosages = await Promise.all(
-        results.drugs.slice(0, 8).map(async (drug) => {
-          try {
-            const dosageResult = await getDrugDosages(parseInt(drug.id));
-            const dosages = dosageResult?.drugDosage?.dosages || [];
-            return {
-              id: drug.id,
-              brandName: drug.name,
-              genericName: drug.genericName || '',
-              therapeuticClass: drug.therapeuticClass || '',
-              defaultDosage: dosages[0]?.strength || '',
-              frequency: 'Once daily',
-              dosages: dosages.map(d => ({ id: d.id, strength: d.strength, qty: d.qty, packages: d.packages }))
-            };
-          } catch {
-            return {
-              id: drug.id,
-              brandName: drug.name,
-              genericName: drug.genericName || '',
-              therapeuticClass: '',
-              defaultDosage: '',
-              frequency: 'Once daily',
-              dosages: []
-            };
-          }
-        })
-      );
-      return drugsWithDosages;
+    const results = await tppSearchDrugs(query, 8);
+    const drugs = Array.isArray(results) ? results : (results?.drugs || []);
+    if (drugs.length > 0) {
+      return drugs.slice(0, 8).map(drug => {
+        const dosages = drug.dosages || [];
+        return {
+          id: drug.id,
+          brandName: drug.name,
+          genericName: drug.genericName || '',
+          therapeuticClass: drug.therapeuticClass || '',
+          defaultDosage: dosages[0]?.strength || '',
+          frequency: 'Once daily',
+          dosages: dosages.map(d => ({ id: d.id, strength: d.strength, qty: d.qty, packages: d.packages }))
+        };
+      });
     }
     return [];
   } catch (error) {
@@ -816,14 +834,60 @@ export default function EmployerCoverageTools() {
   // Payer search state for "similar coverage" flow
   const [selectedPayer, setSelectedPayer] = useState(null);
 
-  // Sunfire backend integration state
+  // ZIP/county state
   const [county, setCounty] = useState('');
   const [countyName, setCountyName] = useState('');
-  const [radiusZipcodes, setRadiusZipcodes] = useState('');
+  const [userState, setUserState] = useState('');
   const [availableCounties, setAvailableCounties] = useState([]);
-  const [sunfireSession, setSunfireSession] = useState(null);
+  const [requiresCountySelection, setRequiresCountySelection] = useState(false);
+  const [loadingCounties, setLoadingCounties] = useState(false);
   const [isLoadingZip, setIsLoadingZip] = useState(false);
   const [zipError, setZipError] = useState(null);
+
+  // ─── SESSION RESTORE ON MOUNT ───
+  useEffect(() => {
+    const s = loadSession();
+    if (s.step && s.step > 0) {
+      setStep(s.step);
+      if (s.answers && Object.keys(s.answers).length > 0) setAnswers(s.answers);
+      if (s.zip) setSearchZipCode(s.zip);
+      if (s.doctors?.length > 0) setDoctors(s.doctors);
+      if (s.prescriptions?.length > 0) setPrescriptions(s.prescriptions);
+      if (s.county) setCounty(s.county);
+      if (s.countyName) setCountyName(s.countyName);
+      if (s.state) setUserState(s.state);
+      if (s.availableCounties?.length > 0) setAvailableCounties(s.availableCounties);
+      if (s.selectedPayer) setSelectedPayer(s.selectedPayer);
+      if (s.maNeeds && Object.keys(s.maNeeds).length > 0) setMaNeeds(prev => ({ ...prev, ...s.maNeeds }));
+      if (s.mgNeeds && Object.keys(s.mgNeeds).length > 0) setMgNeeds(prev => ({ ...prev, ...s.mgNeeds }));
+      if (s.recommendationData) setRecommendationData(s.recommendationData);
+      if (s.planResult) setPlanResult(s.planResult);
+      if (s.matchedPlan) setMatchedPlan(s.matchedPlan);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── PERSIST STATE ON STEP TRANSITIONS ───
+  useEffect(() => {
+    if (step === 0) return;
+    persistSession({
+      step,
+      zip: answers.zip || '',
+      county,
+      countyName,
+      state: userState || answers.state || '',
+      availableCounties,
+      doctors,
+      prescriptions,
+      answers,
+      selectedPayer,
+      maNeeds,
+      mgNeeds,
+      recommendationData,
+      planResult,
+      matchedPlan,
+    });
+  }, [step]);
 
   const set = (k,v) => { if(k==='zip') setSearchZipCode(v); setAnswers(p=>({...p,[k]:v})); };
   const goTo = (s) => {
@@ -832,7 +896,7 @@ export default function EmployerCoverageTools() {
     setStep(s);
   };
   const autoAdvance = (n) => { if(autoTimer.current)clearTimeout(autoTimer.current); autoTimer.current=setTimeout(()=>goTo(n),350); };
-  const reset = () => { setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setRadiusZipcodes(''); setAvailableCounties([]); setSunfireSession(null); setIsLoadingZip(false); setZipError(null); setSelectedPayer(null); goTo(0); };
+  const reset = () => { clearSession(); setAnswers({}); setDoctors([]); setPrescriptions([]); setEmpAnalysis(null); setMedRec(null); setCobraResult(null); setCobra({planType:"",premium:"",deductible:"",copay:"",age:"",zip:"",income:""}); setMatchedPlan(null); setPlanIdResult(null); setCobraPlanId(null); setPlanIdMode(null); setCardUploading(false); setCardImage(null); setSpouseData({knowsDetails:"",spouseAlso65:""}); setRetireeData({cost:"",satisfaction:""}); setMaNeeds({visitFreq:"",veteran:false,vaPrimaryCare:"",tricare:false,champva:false,medicaid:null,dentalNeed:"",secondHome:""}); setMgNeeds({age:"",coverageSituation:"",healthStatus:"",eligibleBefore2020:false,planChoice:"",visitFreq:"",carrier:"",drugPriority:""}); setPlanResult(null); setMatchmakerEntryStep(null); setGuidePrefs(new Set()); setGuideMatch(null); setCounty(''); setCountyName(''); setUserState(''); setAvailableCounties([]); setRequiresCountySelection(false); setIsLoadingZip(false); setZipError(null); setSelectedPayer(null); goTo(0); };
 
   // Extraction status cycling messages
   const extractionMessages = [
@@ -854,30 +918,31 @@ export default function EmployerCoverageTools() {
     return () => clearInterval(interval);
   }, [isExtractingCard, extractionMessages.length]);
 
-  // Fetch V6 recommendations when entering step 1051
+  // Fetch tpp-api recommendations when entering step 1051
   useEffect(() => {
     if (step !== 1051) return;
-    const customerCode = sunfireSession?.customerCode;
     const fetchRecs = async () => {
       try {
-        const year = new Date().getFullYear().toString();
-        const result = await getRecommendationsV6(customerCode, year, {
-          medicaid_payload: {},
-          allow_dsnp: false,
-          allow_csnp: false,
-          ...(answers.preference === "cheaper" && { is_ma_only: true }),
-          // TODO: Replace with dedicated employer-plan matching endpoint when available
-          ...(selectedPayer && { payer_id: selectedPayer.payerId || selectedPayer.id })
+        const result = await getRecommendation({
+          zip: answers.zip,
+          county,
+          state: userState || answers.state,
+          doctors: (doctors || []).map(d => ({ npi: d.npi, name: d.name })),
+          drugs: (prescriptions || []).map(d => ({ name: d.name, rxcui: d.rxcui, dosage_strength: d.strength })),
+          medicaid: maNeeds.medicaid === true ? 'yes' : 'no',
+          priorities: answers.preference === 'cheaper' ? ['low_premium'] : answers.preference === 'better' ? ['comprehensive'] : [],
+          plan_types: answers.preference === 'cheaper' ? ['HMO', 'PPO'] : [],
+          ...(matchedPlan && { current_plan: { contract_id: matchedPlan.contractId, plan_id: matchedPlan.planId } })
         });
         setRecommendationData(result);
       } catch (err) {
-        console.error('V6 recommendations failed:', err);
+        console.error('Recommendation fetch failed:', err);
         setRecommendationData(null);
       }
       goTo(1052);
     };
     fetchRecs();
-  }, [step, sunfireSession?.customerCode, answers.preference, selectedPayer]);
+  }, [step, answers.zip, answers.preference, county, userState]);
 
   // Branch detection
   const isSmall = answers.empSize === "small";
@@ -906,190 +971,78 @@ export default function EmployerCoverageTools() {
     setEmpAnalysis(generateEmployerAnalysis(a)); goTo(7);
   };
 
-  // ZIP code validation with backend
+  // ZIP code validation with tpp-api
   const handleZipContinue = async (nextStep) => {
     if (!answers.zip || !/^\d{5}$/.test(answers.zip)) return;
 
     setIsLoadingZip(true);
+    setLoadingCounties(true);
     setZipError(null);
 
     try {
-      const zipData = await lookupZip(answers.zip);
+      const zipData = await lookupZipCounties(answers.zip);
+      const counties = zipData?.counties || [];
 
-      // Handle different API response formats
-      let counties = [];
-
-      if (Array.isArray(zipData)) {
-        counties = zipData.map(item => ({
-          code: item.countyCode || item.fips || '',
-          fips: item.countyCode || item.fips || '',
-          name: item.county || item.countyName || '',
-          state: item.state || '',
-          label: item.label || ''
-        }));
-      } else if (zipData.zips && Array.isArray(zipData.zips)) {
-        counties = zipData.zips.map(item => ({
-          code: item.countyCode || item.fips || '',
-          fips: item.countyCode || item.fips || '',
-          name: item.county || item.countyName || '',
-          state: item.state || '',
-          label: item.label || ''
-        }));
-      } else if (zipData.counties && Array.isArray(zipData.counties)) {
-        counties = zipData.counties;
-      } else if (zipData.data?.counties && Array.isArray(zipData.data.counties)) {
-        counties = zipData.data.counties;
-      } else if (zipData.county || zipData.fips || zipData.countyCode) {
-        counties = [{
-          code: zipData.fips || zipData.countyCode || zipData.county_code || '',
-          fips: zipData.fips || zipData.countyCode || zipData.county_code || '',
-          name: zipData.county || zipData.countyName || zipData.county_name || ''
-        }];
-      } else if (zipData.state && zipData.zip) {
-        counties = [{ code: '', fips: '', name: zipData.state || '' }];
+      if (counties.length === 0) {
+        setZipError('No service area found for this ZIP code.');
+        return;
       }
 
-      // Extract and store the user's state for payer search filtering
-      const userState = zipData.state || counties[0]?.state || '';
-      if (userState) {
-        set("state", userState);
-      }
+      setAvailableCounties(counties);
 
-      // Fetch radius zipcodes for MCP search
-      const radiusZips = await getRadiusZipcodes(answers.zip);
-      setRadiusZipcodes(radiusZips || answers.zip);
-
-      if (counties.length > 1) {
-        setAvailableCounties(counties);
-      } else if (counties.length === 1) {
-        const selectedCounty = counties[0];
-        setCounty(selectedCounty.code || selectedCounty.fips || '');
-        setCountyName(selectedCounty.name || '');
-        setAvailableCounties([]);
-
-        // Create Sunfire session
-        try {
-          const session = await saveSession({
-            zip: answers.zip,
-            county: selectedCounty.code || selectedCounty.fips || '',
-            year: new Date().getFullYear()
-          });
-          setSunfireSession(session);
-        } catch (sessionErr) {
-          console.warn('Failed to create Sunfire session:', sessionErr);
-        }
-
+      if (counties.length === 1) {
+        const c = counties[0];
+        setCounty(c.county_name || c.name || '');
+        setCountyName(c.county_name || c.name || '');
+        setUserState(c.state || '');
+        set("state", c.state || '');
+        setRequiresCountySelection(false);
+        persistSession({ zip: answers.zip, county: c.county_name || c.name || '', countyName: c.county_name || c.name || '', state: c.state || '', availableCounties: counties });
         goTo(nextStep);
       } else {
-        console.warn('[ZIP Lookup] Could not parse counties from response:', zipData);
-        setZipError('No service area found for this ZIP code.');
+        // Multiple counties — show dropdown, don't auto-advance
+        setRequiresCountySelection(true);
       }
     } catch (error) {
       console.error('[ZIP Lookup] Error:', error);
       setZipError(error.message || 'Failed to validate ZIP code. Please try again.');
     } finally {
       setIsLoadingZip(false);
+      setLoadingCounties(false);
     }
   };
 
   // Handle county selection when multiple counties available
-  const handleCountySelect = async (selectedCounty, nextStep) => {
-    setCounty(selectedCounty.code || selectedCounty.fips || '');
-    setCountyName(selectedCounty.name || '');
+  const handleCountySelect = (selectedCounty, nextStep) => {
+    const cName = selectedCounty.county_name || selectedCounty.name || '';
+    const cState = selectedCounty.state || '';
+    setCounty(cName);
+    setCountyName(cName);
+    setUserState(cState);
+    set("state", cState);
     setAvailableCounties([]);
-
-    // Create Sunfire session
-    try {
-      const session = await saveSession({
-        zip: answers.zip,
-        county: selectedCounty.code || selectedCounty.fips || '',
-        year: new Date().getFullYear()
-      });
-      setSunfireSession(session);
-    } catch (sessionErr) {
-      console.warn('Failed to create Sunfire session:', sessionErr);
-    }
-
+    setRequiresCountySelection(false);
+    persistSession({ zip: answers.zip, county: cName, countyName: cName, state: cState });
     goTo(nextStep);
   };
 
   // Handle doctor selection from DoctorSearchStep
-  const handleDoctorComplete = async (selectedDoctors, nextStep) => {
+  const handleDoctorComplete = (selectedDoctors, nextStep) => {
     setDoctors(selectedDoctors);
     if (selectedDoctors.length === 0) {
       set("wantSimilarNetwork", true);
     }
-
-    // Add doctors to sunfire session (following TPP-Emily format)
-    if (sunfireSession?.customerCode && selectedDoctors.length > 0) {
-      try {
-        // Convert to sunfire session format: { id: number, name: string, npi?: string }
-        const sessionDoctors = selectedDoctors.map(doc => ({
-          id: parseInt(doc.id) || doc.id,
-          name: doc.name,
-          npi: doc.npi || String(doc.id)
-        }));
-
-        const updatedSession = await patchSession({
-          customerCode: sunfireSession.customerCode,
-          operations: [
-            { op: 'replace', path: '/doctors', value: sessionDoctors }
-          ]
-        });
-
-        if (updatedSession) {
-          setSunfireSession(prev => ({ ...prev, doctors: sessionDoctors }));
-        }
-      } catch (err) {
-        console.warn('Failed to add doctors to session:', err);
-      }
-    }
-
+    persistSession({ doctors: selectedDoctors });
     goTo(nextStep);
   };
 
   // Handle drug selection from DrugSearchStep
-  const handleDrugComplete = async (selectedDrugs, customerCode, nextStep) => {
+  const handleDrugComplete = (selectedDrugs, nextStep) => {
     setPrescriptions(selectedDrugs);
-
-    // Update customerCode if provided
-    const effectiveCustomerCode = customerCode || sunfireSession?.customerCode;
-    if (customerCode && sunfireSession) {
-      setSunfireSession(prev => ({ ...prev, customerCode }));
-    }
-
     if (selectedDrugs.length === 0) {
       set("wantSimilarRx", true);
     }
-
-    // Add drugs to sunfire session (following TPP-Emily format)
-    if (effectiveCustomerCode && selectedDrugs.length > 0) {
-      try {
-        // Convert to sunfire session format: { id, name, qty, frequency, ps, pm }
-        const sessionDrugs = selectedDrugs.map(drug => ({
-          id: drug.id,
-          name: drug.name,
-          qty: drug.qty || 30,
-          frequency: drug.frequency || 30,
-          ps: drug.ps || 1,
-          pm: drug.pm || 30
-        }));
-
-        const updatedSession = await patchSession({
-          customerCode: effectiveCustomerCode,
-          operations: [
-            { op: 'replace', path: '/drugs', value: sessionDrugs }
-          ]
-        });
-
-        if (updatedSession) {
-          setSunfireSession(prev => ({ ...prev, drugs: sessionDrugs }));
-        }
-      } catch (err) {
-        console.warn('Failed to add drugs to session:', err);
-      }
-    }
-
+    persistSession({ prescriptions: selectedDrugs });
     goTo(nextStep);
   };
 
@@ -1283,30 +1236,52 @@ export default function EmployerCoverageTools() {
           {sL("Your Location")}
           {sT("What's your ZIP code?")}
           {sS("Medicare plans, pricing, and doctor networks all depend on where you live.")}
-          <div>{fL("ZIP Code")}<input type="text" value={answers.zip||""} onChange={e=>{set("zip",e.target.value);setZipError(null);setAvailableCounties([]);}} placeholder="e.g. 60614" style={iSt} maxLength={5}/></div>
+          <div>{fL("ZIP Code")}<input type="text" value={answers.zip||""} onChange={e=>{set("zip",e.target.value);setZipError(null);setAvailableCounties([]);setRequiresCountySelection(false);setCounty('');setCountyName('');}} placeholder="e.g. 60614" style={iSt} maxLength={5}/></div>
+
+          {/* Loading indicator for county lookup */}
+          {loadingCounties && <div style={{marginTop:12,fontSize:13,color:TEXT_MED}}>Checking your county...</div>}
 
           {/* County selection when multiple counties */}
-          {availableCounties.length > 1 && (
+          {requiresCountySelection && availableCounties.length > 1 && (
             <div style={{marginTop:16}}>
-              {fL("Select your county")}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {availableCounties.map((c,i) => (
-                  <div key={i} onClick={()=>handleCountySelect(c,103)} style={{border:`2px solid ${county===(c.code||c.fips)?GREEN:BORDER}`,borderRadius:10,padding:"12px 16px",cursor:"pointer",background:county===(c.code||c.fips)?GREEN_LIGHT:"#fff",transition:"all 0.15s"}}>
-                    <div style={{fontSize:14,fontWeight:600,color:TEXT_DARK}}>{c.name}</div>
-                  </div>
-                ))}
-              </div>
+              {fL("County")}
+              <select
+                value={county}
+                onChange={e => {
+                  const selected = availableCounties.find(c => (c.county_name || c.name) === e.target.value);
+                  if (selected) {
+                    setCounty(selected.county_name || selected.name || '');
+                    setCountyName(selected.county_name || selected.name || '');
+                    setUserState(selected.state || '');
+                    set("state", selected.state || '');
+                  }
+                }}
+                style={{...iSt, cursor:"pointer", background:"#fff"}}
+              >
+                <option value="">Select your county</option>
+                {availableCounties.map((c,i) => {
+                  const name = c.county_name || c.name || '';
+                  const st = c.state || '';
+                  return <option key={i} value={name}>{name}{st ? `, ${st}` : ''}</option>;
+                })}
+              </select>
+              {county && (
+                <div style={{marginTop:8,fontSize:13,color:GREEN,fontWeight:600}}>We found plans in your area</div>
+              )}
+              {county && (
+                <button onClick={()=>handleCountySelect(availableCounties.find(c=>(c.county_name||c.name)===county),103)} style={{width:"100%",marginTop:16,background:GREEN,color:"#fff",border:"none",padding:"14px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,cursor:"pointer"}}>Continue →</button>
+              )}
             </div>
           )}
 
           {/* Error message */}
           {zipError && <div style={{marginTop:12,padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,color:"#dc2626",fontSize:13}}>{zipError}</div>}
 
-          {/* Continue button */}
-          {availableCounties.length <= 1 && (()=>{
+          {/* Continue button — only when not showing county dropdown */}
+          {!requiresCountySelection && (()=>{
             const zv=/^\d{5}$/.test(answers.zip||"");
             return <button onClick={zv&&!isLoadingZip?()=>handleZipContinue(103):undefined} disabled={isLoadingZip} style={{width:"100%",marginTop:28,background:zv?GREEN:BORDER,color:zv?"#fff":TEXT_LIGHT,border:"none",padding:"14px 28px",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:heading,cursor:zv&&!isLoadingZip?"pointer":"default",opacity:isLoadingZip?0.7:1}}>
-              {isLoadingZip?"Validating...":"Continue →"}
+              {isLoadingZip?"Checking your county...":"Continue →"}
             </button>
           })()}
           {btnB(101)}
@@ -1317,9 +1292,7 @@ export default function EmployerCoverageTools() {
           {sT("Who are your current doctors?")}
           {sS("Adding your doctors helps us check which Medicare plans include them. You can skip this and add them later.")}
           <DoctorSearchStep
-            zipCode={radiusZipcodes || answers.zip}
-            state={zipToState(answers.zip)}
-            county={countyName}
+            zipCode={answers.zip}
             selectedDoctors={doctors}
             onComplete={(selectedDoctors) => handleDoctorComplete(selectedDoctors, 104)}
             onBack={() => goTo(102)}
@@ -1332,11 +1305,8 @@ export default function EmployerCoverageTools() {
           {sS("This helps us match you with drug plans that cover your specific prescriptions.")}
           <DrugSearchStep
             zipCode={answers.zip}
-            county={county}
-            countyName={countyName}
-            customerCode={sunfireSession?.customerCode}
             selectedDrugs={prescriptions}
-            onComplete={(selectedDrugs, customerCode) => handleDrugComplete(selectedDrugs, customerCode, 105)}
+            onComplete={(selectedDrugs) => handleDrugComplete(selectedDrugs, 105)}
             onBack={() => goTo(103)}
           />
         </div>)}
@@ -1391,12 +1361,26 @@ export default function EmployerCoverageTools() {
 
         {/* ═══ STEP 1052: SHOW RECOMMENDATION ═══ */}
         {step===1052&&(()=>{
-          const plan = recommendationData?.planOverview || {};
-          const benefits = (recommendationData?.benefits || []).filter(b => b.newValue && b.newValue !== "Not specified");
-          const hasPlan = plan.name || benefits.length > 0;
-          // Extract just the dollar amount from premium (handles "$0", "$0 per month", etc.)
-          const premiumRaw = plan.premium || "$0";
-          const premiumAmount = premiumRaw.replace(/\s*(per month|\/mo|monthly).*$/i, "").trim();
+          // Map tpp-api recommendation response
+          const rec = recommendationData?.recommendations?.[0] || {};
+          const plan = {
+            name: rec.plan_name || recommendationData?.planOverview?.name || '',
+            carrier: rec.carrier || recommendationData?.planOverview?.carrier || '',
+            premium: rec.monthly_premium ?? recommendationData?.planOverview?.premium ?? null,
+            planType: rec.plan_type || recommendationData?.planOverview?.planType || '',
+            starRating: rec.star_rating || null,
+            contractId: rec.contract_id || recommendationData?.planOverview?.contractId || '',
+            enrollmentUrl: rec.enrollment_url || null,
+          };
+          const keyBenefits = rec.key_benefits || recommendationData?.benefits || [];
+          const drugsCovered = rec.drugs_covered ?? null;
+          const drugsTotal = rec.drugs_total ?? prescriptions.length;
+          const doctorsInNetwork = rec.doctors_in_network ?? null;
+          const doctorsTotal = rec.doctors_total ?? doctors.length;
+          const reasoning = rec.reasoning || '';
+
+          const hasPlan = plan.name || keyBenefits.length > 0;
+          const premiumDisplay = plan.premium != null ? (typeof plan.premium === 'number' ? `$${plan.premium}` : String(plan.premium).replace(/\s*(per month|\/mo|monthly).*$/i, "").trim()) : "$0";
 
           // Fallback if no recommendation data
           if (!hasPlan) {
@@ -1425,34 +1409,58 @@ export default function EmployerCoverageTools() {
             <div style={{background:GREEN_LIGHT,border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,marginBottom:20,textAlign:"center"}}>
               <div style={{fontSize:13,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:TEXT_MED,marginBottom:4}}>Monthly Premium</div>
               <div style={{fontSize:36,fontWeight:800,color:GREEN,fontFamily:heading,lineHeight:1.2}}>
-                {premiumAmount}
+                {premiumDisplay}
               </div>
               <div style={{fontSize:13,color:TEXT_MED}}>per month</div>
+              {plan.starRating && (
+                <div style={{fontSize:13,color:TEXT_MED,marginTop:4}}>{"★".repeat(Math.round(plan.starRating))} {plan.starRating} stars</div>
+              )}
             </div>
 
-            {/* Plan Benefits Section */}
-            {benefits.length > 0 && (
+            {/* Key Benefits Section */}
+            {keyBenefits.length > 0 && (
               <div style={{marginBottom:24}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
-                  <div style={{fontSize:16,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>Plan Benefits</div>
+                  <div style={{fontSize:16,fontWeight:700,color:TEXT_DARK,fontFamily:heading}}>Key Benefits</div>
                   <div style={{flex:1,height:2,background:GREEN_BORDER,borderRadius:1}}/>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  {benefits.map((b, i) => (
+                  {keyBenefits.map((b, i) => {
+                    const label = typeof b === 'string' ? b : (b.name || b.category || '');
+                    const value = typeof b === 'string' ? null : (b.newValue || b.value || '');
+                    const desc = typeof b === 'string' ? null : (b.whyBetter || b.description || '');
+                    return (
                     <div key={i} style={{background:"#fff",border:`1px solid ${BORDER}`,borderRadius:12,padding:16}}>
                       <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
                         <div style={{width:28,height:28,borderRadius:"50%",background:GREEN_LIGHT,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
                           <span style={{color:GREEN,fontSize:14,fontWeight:700}}>✓</span>
                         </div>
                         <div style={{flex:1}}>
-                          <div style={{fontSize:15,fontWeight:700,color:TEXT_DARK,fontFamily:heading,marginBottom:4}}>{b.name || b.category}</div>
-                          <div style={{fontSize:18,fontWeight:700,color:GREEN,fontFamily:heading,marginBottom:6}}>{b.newValue}</div>
-                          {b.whyBetter && <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.5}}>{b.whyBetter}</div>}
+                          <div style={{fontSize:15,fontWeight:700,color:TEXT_DARK,fontFamily:heading,marginBottom:4}}>{label}</div>
+                          {value && <div style={{fontSize:18,fontWeight:700,color:GREEN,fontFamily:heading,marginBottom:6}}>{value}</div>}
+                          {desc && <div style={{fontSize:13,color:TEXT_MED,lineHeight:1.5}}>{desc}</div>}
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
+              </div>
+            )}
+
+            {/* Doctor/Rx match */}
+            {doctorsInNetwork != null && doctorsTotal > 0 && (
+              <div style={{background:BG_SUBTLE,borderRadius:10,padding:"12px 16px",marginBottom:8,fontSize:14,color:TEXT_DARK}}><strong>{doctorsInNetwork}</strong> of <strong>{doctorsTotal}</strong> doctors are in-network</div>
+            )}
+            {drugsCovered != null && drugsTotal > 0 && (
+              <div style={{background:BG_SUBTLE,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:14,color:TEXT_DARK}}><strong>{drugsCovered}</strong> of <strong>{drugsTotal}</strong> prescriptions covered</div>
+            )}
+
+            {/* Reasoning */}
+            {reasoning && (
+              <div style={{background:BG_SUBTLE,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:600,color:TEXT_LIGHT,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>Why This Plan</div>
+                <div style={{fontSize:14,color:TEXT_MED,lineHeight:1.6}}>{reasoning}</div>
               </div>
             )}
 
@@ -1475,7 +1483,9 @@ export default function EmployerCoverageTools() {
               </button>
             )}
 
-            {selectedPayer ? (
+            {plan.enrollmentUrl ? (
+              <a href={plan.enrollmentUrl} target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center"}}>Enroll in This Plan →</a>
+            ) : selectedPayer ? (
               <button onClick={() => goTo(349)} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer"}}>
                 Continue →
               </button>
@@ -2460,7 +2470,7 @@ export default function EmployerCoverageTools() {
           {sT("Are you currently enrolled in Medicaid?")}
           {sS("If you have both Medicare and Medicaid, there are special plans designed specifically for you that include extra benefits and $0 costs.")}
           {oS(<>
-            <OptionCard title="Yes — I'm on Medicaid" selected={maNeeds.medicaid===true} onClick={()=>{setMaNeeds(n=>({...n,medicaid:true}));const r=matchMAPlan({...maNeeds,medicaid:true},doctors,prescriptions);setPlanResult({type:"ma",...r});goTo(330)}}/>
+            <OptionCard title="Yes — I'm on Medicaid" selected={maNeeds.medicaid===true} onClick={async()=>{setMaNeeds(n=>({...n,medicaid:true}));const r=await matchMAPlan({...maNeeds,medicaid:true},doctors,prescriptions,answers.zip,county,userState||answers.state,matchedPlan);setPlanResult({type:"ma",...r});goTo(330)}}/>
             <OptionCard title="No" selected={maNeeds.medicaid===false} onClick={()=>{setMaNeeds(n=>({...n,medicaid:false}));autoAdvance(313)}}/>
             <OptionCard title="I'm not sure" selected={maNeeds.medicaid==="unsure"} onClick={()=>setMaNeeds(n=>({...n,medicaid:"unsure"}))}/>
           </>)}
@@ -2493,9 +2503,9 @@ export default function EmployerCoverageTools() {
           {sT("Do you have a second home or spend extended time in another state?")}
           {sS("If you split your time between two places, your Medicare plan needs to cover you in both locations — and not all plans do.")}
           {oS(<>
-            <OptionCard title="No — I live in one place year-round" selected={maNeeds.secondHome===false} onClick={()=>{setMaNeeds(n=>({...n,secondHome:false}));const r=matchMAPlan({...maNeeds,secondHome:false},doctors,prescriptions);setPlanResult({type:"ma",...r});goTo(330)}}/>
-            <OptionCard title="Yes — I split time between two states" desc="You'll need a plan that covers you in both locations." selected={maNeeds.secondHome===true} onClick={()=>{setMaNeeds(n=>({...n,secondHome:true}));const r=matchMAPlan({...maNeeds,secondHome:true},doctors,prescriptions);setPlanResult({type:"ma",...r});goTo(330)}}/>
-            <OptionCard title="I travel frequently but don't have a second home" selected={maNeeds.secondHome==="travel"} onClick={()=>{setMaNeeds(n=>({...n,secondHome:"travel"}));const r=matchMAPlan({...maNeeds,secondHome:"travel"},doctors,prescriptions);setPlanResult({type:"ma",...r});goTo(330)}}/>
+            <OptionCard title="No — I live in one place year-round" selected={maNeeds.secondHome===false} onClick={async()=>{setMaNeeds(n=>({...n,secondHome:false}));const r=await matchMAPlan({...maNeeds,secondHome:false},doctors,prescriptions,answers.zip,county,userState||answers.state,matchedPlan);setPlanResult({type:"ma",...r});goTo(330)}}/>
+            <OptionCard title="Yes — I split time between two states" desc="You'll need a plan that covers you in both locations." selected={maNeeds.secondHome===true} onClick={async()=>{setMaNeeds(n=>({...n,secondHome:true}));const r=await matchMAPlan({...maNeeds,secondHome:true},doctors,prescriptions,answers.zip,county,userState||answers.state,matchedPlan);setPlanResult({type:"ma",...r});goTo(330)}}/>
+            <OptionCard title="I travel frequently but don't have a second home" selected={maNeeds.secondHome==="travel"} onClick={async()=>{setMaNeeds(n=>({...n,secondHome:"travel"}));const r=await matchMAPlan({...maNeeds,secondHome:"travel"},doctors,prescriptions,answers.zip,county,userState||answers.state,matchedPlan);setPlanResult({type:"ma",...r});goTo(330)}}/>
           </>)}
           {btnB(313)}
         </div>)}
@@ -2629,7 +2639,7 @@ export default function EmployerCoverageTools() {
           {sL("Your Personalized Plan")}
 
           {/* ── MA PLAN DISPLAY ── */}
-          {planResult.type==="ma"&&(<>
+          {planResult.type==="ma"&&planResult.plan&&(<>
             {sT(`We recommend: ${planResult.plan.name}`)}
             <div style={{border:`2px solid ${GREEN_BORDER}`,borderRadius:16,padding:24,background:GREEN_LIGHT,marginBottom:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:16}}>
@@ -2672,6 +2682,13 @@ export default function EmployerCoverageTools() {
 
             <a href="https://www.medicare.gov/plan-compare" target="_blank" rel="noopener" style={{display:"block",width:"100%",boxSizing:"border-box",background:GREEN,color:"#fff",padding:"16px 28px",borderRadius:12,fontSize:16,fontWeight:700,fontFamily:heading,textDecoration:"none",textAlign:"center",marginTop:24}}>Enroll in This Plan Online →</a>
             <div style={{fontSize:13,color:TEXT_MED,textAlign:"center",marginTop:8}}>Ready to enroll? This link takes you directly to the plan.</div>
+          </>)}
+
+          {/* ── MA PLAN FALLBACK (API failed) ── */}
+          {planResult.type==="ma"&&!planResult.plan&&(<>
+            {sT("We're finding the right plan for you")}
+            {sS("We couldn't load plan details right now. Talk to an advisor for personalized help.")}
+            <button onClick={()=>{setMatchmakerEntryStep(330);goTo(301)}} style={{width:"100%",padding:"16px 28px",background:GREEN,border:"none",borderRadius:12,fontSize:16,fontWeight:700,color:"#fff",fontFamily:heading,cursor:"pointer",marginTop:16}}>Talk to an Advisor →</button>
           </>)}
 
                               {/* ── MEDIGAP + PART D DISPLAY (CSG Engine — Restructured) ── */}
@@ -2930,7 +2947,6 @@ export default function EmployerCoverageTools() {
             zipCode={answers.zip}
             county={county}
             countyName={countyName}
-            customerCode={sunfireSession?.customerCode}
             onComplete={(result)=>{if(result){setEligibilityResult(result);setMatchedPlan(insuranceCardData);setMedRec(prev=>prev?enhanceWithPlanMatch(insuranceCardData,prev):prev)};goTo(349)}}
             onReset={()=>goTo(105)}
             onSearchForPlan={()=>goTo(17)}

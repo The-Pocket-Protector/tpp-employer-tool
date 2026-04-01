@@ -116,17 +116,13 @@ export async function checkEligibility({ tradingPartnerServiceId, memberId, firs
     }
 
     const payload = {
+      externalPatientId: memberId,
       firstName,
       lastName,
       dateOfBirth: dob,
       tradingPartnerServiceId,
       serviceTypeCodes: ['30']
     };
-
-    // Only include externalPatientId when we have a real member ID
-    if (memberId) {
-      payload.externalPatientId = memberId;
-    }
 
     // Include SSN if provided
     if (ssn) {
@@ -258,11 +254,7 @@ async function performMedicareEligibilityCheck(cardData, dateOfBirth, ssn, first
 
   const hasState = !!(cardData.state);
 
-  if (hasMBI && !ssn && !hasState) {
-    // Have MBI already - direct CMS eligibility check
-    tradingPartnerServiceId = 'CMS';
-    memberId = mbi;
-  } else if (ssn) {
+  if (ssn) {
     // SSN available - use MBILU (most reliable)
     tradingPartnerServiceId = 'MBILU';
     memberId = hasMBI ? mbi : undefined;
@@ -271,7 +263,7 @@ async function performMedicareEligibilityCheck(cardData, dateOfBirth, ssn, first
     tradingPartnerServiceId = 'MBILUNOSSN';
     memberId = hasMBI ? mbi : undefined;
   } else {
-    throw new Error('Medicare eligibility check requires an MBI, SSN, or subscriber state.');
+    throw new Error('Medicare eligibility check requires either SSN or subscriber state.');
   }
 
   const payerInfo = {

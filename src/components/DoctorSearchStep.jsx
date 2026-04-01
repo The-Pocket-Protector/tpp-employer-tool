@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { searchProviders } from '../services/npi.service';
+import { searchPhysicians } from '../services/tpp-api.service';
 import {
   GREEN,
   GREEN_LIGHT,
@@ -18,14 +18,12 @@ import {
 
 /**
  * @param {Object} props
- * @param {string} props.zipCode - User's ZIP code (or comma-separated radius zipcodes)
- * @param {string} props.state - User's 2-letter state code (e.g., "NY")
- * @param {string} props.county - User's county name
+ * @param {string} props.zipCode - User's ZIP code
  * @param {Array} props.selectedDoctors - Already selected doctors
  * @param {function} props.onComplete - Callback with selected doctors array
  * @param {function} props.onBack - Callback to go back
  */
-export default function DoctorSearchStep({ zipCode, state, county, selectedDoctors = [], onComplete, onBack }) {
+export default function DoctorSearchStep({ zipCode, selectedDoctors = [], onComplete, onBack }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -61,12 +59,23 @@ export default function DoctorSearchStep({ zipCode, state, county, selectedDocto
       setError(null);
 
       try {
-        // Search by name first, then specialty - uses exact ZIP code
-        const results = await searchProviders(searchQuery, state, primaryZip);
+        const results = await searchPhysicians(primaryZip, searchQuery);
 
-        // Filter out already selected providers
+        // Map tpp-api response to expected shape and filter out already selected
         const selectedIds = new Set(selected.map(d => d.id));
-        const filtered = (results || []).filter(p => !selectedIds.has(p.id));
+        const mapped = (results || []).map(p => ({
+          id: p.npi || p.id,
+          name: p.name,
+          npi: p.npi || p.id,
+          specialty: p.specialty || '',
+          specialties: p.specialties || p.specialty || '',
+          city: p.city || '',
+          state: p.state || '',
+          address1: p.address1 || p.address || '',
+          phone: p.phone || '',
+          zip: p.zip || '',
+        }));
+        const filtered = mapped.filter(p => !selectedIds.has(p.id));
 
         setSuggestions(filtered);
         setShowSuggestions(filtered.length > 0);
@@ -85,7 +94,7 @@ export default function DoctorSearchStep({ zipCode, state, county, selectedDocto
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, state, primaryZip, selected]);
+  }, [searchQuery, primaryZip, selected]);
 
   // Close suggestions when clicking outside
   useEffect(() => {
